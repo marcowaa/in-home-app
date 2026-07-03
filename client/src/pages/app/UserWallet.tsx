@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowRight, Plus, ArrowUp, Loader2, CreditCard, Search, Trash2, Star, Check } from "lucide-react";
+import { ArrowRight, Plus, ArrowUp, Loader2, CreditCard, Search, Trash2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +21,8 @@ export default function UserWallet() {
   const [amount, setAmount] = useState("");
   const [providerId, setProviderId] = useState("");
   const [txSearch, setTxSearch] = useState("");
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Card form
   const [cardName, setCardName] = useState("");
@@ -93,7 +95,25 @@ export default function UserWallet() {
   const balance = parseFloat(walletData?.balance || "0");
   const frozen = parseFloat(walletData?.frozenBalance || "0");
 
-  const transactions = allTransactions.filter((tx: any) => {
+  // Build list of all "wallets" — main wallet + bank cards
+  const allCards = [
+    { id: "main", type: "wallet", name: "المحفظة", balance: String(balance - frozen), frozen, isPrimary: true, transactions: allTransactions },
+    ...cards.map((c: any) => ({
+      id: c.id,
+      type: "card",
+      name: c.card_name,
+      balance: String(c.balance || "0"),
+      frozen: 0,
+      isPrimary: c.is_primary,
+      last4: c.last4,
+      brand: c.brand,
+      color: c.color,
+      transactions: [], // card transactions would be filtered in a real system
+    })),
+  ];
+
+  const activeCard = allCards[activeCardIndex] || allCards[0];
+  const activeTransactions = (activeCard?.transactions || []).filter((tx: any) => {
     if (!txSearch) return true;
     const s = txSearch.toLowerCase();
     return (
@@ -104,6 +124,17 @@ export default function UserWallet() {
       String(tx.amount || "").includes(s)
     );
   });
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const containerWidth = scrollRef.current.clientWidth;
+    const scrollLeft = scrollRef.current.scrollLeft;
+    // RTL: scrollLeft is negative or goes the other way
+    const idx = Math.round(Math.abs(scrollLeft) / containerWidth);
+    if (idx !== activeCardIndex && idx < allCards.length + 1) {
+      setActiveCardIndex(Math.min(idx, allCards.length));
+    }
+  };
 
   const handleAddCard = () => {
     if (!cardName || cardNumber.length < 4) return;
@@ -119,126 +150,171 @@ export default function UserWallet() {
     "from-indigo-600 to-pink-600",
   ];
 
+  const scrollToCard = (index: number) => {
+    if (!scrollRef.current) return;
+    const containerWidth = scrollRef.current.clientWidth;
+    scrollRef.current.scrollTo({ left: -(index * containerWidth), behavior: "smooth" });
+    setActiveCardIndex(index);
+  };
+
   return (
     <div dir="rtl" className="min-h-screen">
       <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
         <Button variant="ghost" size="icon" onClick={() => navigate("/app/home")}><ArrowRight className="h-5 w-5" /></Button>
         <h1 className="font-bold text-gray-900">محفظتي</h1>
+        <Button variant="ghost" size="sm" className="mr-auto h-8 gap-1 text-blue-600" onClick={() => setAddCardDialog(true)}>
+          <Plus className="h-4 w-4" /> ربط بطاقة
+        </Button>
       </div>
 
-      {/* Bank Cards Section */}
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-gray-900 text-sm">بطاقاتي</h2>
-          <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setAddCardDialog(true)}>
-            <Plus className="h-4 w-4" /> ربط بطاقة
-          </Button>
-        </div>
+      {/* Full-width snap scrolling cards */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {/* Main wallet + each card = full screen width */}
+        {allCards.map((card: any, i: number) => {
+          const isWallet = card.type === "wallet";
+          const color = isWallet ? "from-blue-600 to-purple-700" : (card.color || cardColors[i % cardColors.length]);
+          const isActive = i === activeCardIndex;
 
-        {/* Cards carousel */}
-        <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 snap-x">
-          {/* Main wallet card */}
-          <div className="snap-start flex-shrink-0 w-[300px] bg-gradient-to-br from-blue-600 to-purple-700 text-white rounded-2xl p-4 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                <span className="text-sm font-medium">المحفظة</span>
-              </div>
-              <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full">رئيسية</span>
-            </div>
-            <p className="text-xs text-blue-100 mb-1">الرصيد المتاح</p>
-            <p className="text-2xl font-bold mb-3">{formatPrice(String(balance - frozen))} <span className="text-sm">ج.م</span></p>
-            {frozen > 0 && (
-              <div className="pt-2 border-t border-white/20 flex justify-between text-xs">
-                <span className="text-blue-100">مجمّد</span>
-                <span>{formatPrice(String(frozen))} ج.م</span>
-              </div>
-            )}
-            <div className="mt-3 flex gap-1.5">
-              <div className="w-8 h-5 bg-yellow-400/80 rounded-sm" />
-              <div className="w-8 h-5 bg-red-500/80 rounded-sm" />
-            </div>
-          </div>
+          return (
+            <div
+              key={card.id}
+              className="snap-center flex-shrink-0 w-full p-4"
+            >
+              {/* Card visual */}
+              <div className={cn("bg-gradient-to-br text-white rounded-2xl p-5 shadow-lg relative overflow-hidden", color)}>
+                {/* Decorative circles */}
+                <div className="absolute -top-10 -left-10 w-32 h-32 bg-white/5 rounded-full" />
+                <div className="absolute -bottom-12 -right-8 w-40 h-40 bg-white/5 rounded-full" />
 
-          {/* Linked bank cards */}
-          {cards.map((card: any, i: number) => {
-            const color = card.color || cardColors[i % cardColors.length];
-            return (
-              <div key={card.id} className={cn("snap-start flex-shrink-0 w-[300px] bg-gradient-to-br text-white rounded-2xl p-4 shadow-lg relative", color)}>
-                {card.is_primary && (
-                  <span className="absolute top-3 left-3 text-[10px] bg-white/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Star className="h-3 w-3 fill-yellow-300 text-yellow-300" /> رئيسية
-                  </span>
-                )}
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium">{card.card_name}</span>
-                  <span className="text-xs uppercase">{card.brand}</span>
-                </div>
-                <div className="mb-4 mt-6">
-                  <p className="text-xs opacity-80 mb-1">الرصيد</p>
-                  <p className="text-2xl font-bold">{formatPrice(String(card.balance))} <span className="text-sm">ج.م</span></p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="font-mono text-base tracking-widest">•••• {card.last4}</p>
-                  <div className="flex gap-1">
-                    <button onClick={() => setPrimaryMutation.mutate(card.id)} className="p-1 hover:bg-white/20 rounded" title="تعيين رئيسية">
-                      <Star className={cn("h-4 w-4", card.is_primary ? "fill-yellow-300 text-yellow-300" : "text-white/60")} />
-                    </button>
-                    <button onClick={() => deleteCardMutation.mutate(card.id)} className="p-1 hover:bg-white/20 rounded" title="حذف">
-                      <Trash2 className="h-4 w-4 text-white/60" />
-                    </button>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="h-5 w-5" />
+                      <span className="text-sm font-medium">{card.name}</span>
+                    </div>
+                    {card.isPrimary && (
+                      <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Star className="h-3 w-3 fill-yellow-300 text-yellow-300" /> رئيسية
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs opacity-80 mb-1">{isWallet ? "الرصيد المتاح" : "رصيد البطاقة"}</p>
+                  <p className="text-3xl font-bold mb-4">{formatPrice(card.balance)} <span className="text-base font-normal">ج.م</span></p>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-white/20">
+                    <div>
+                      {isWallet ? (
+                        <>
+                          {card.frozen > 0 && (
+                            <span className="text-xs text-blue-100">مجمّد: {formatPrice(String(card.frozen))} ج.م</span>
+                          )}
+                        </>
+                      ) : (
+                        <p className="font-mono text-base tracking-widest">•••• {card.last4}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs uppercase opacity-80">{isWallet ? "EGP" : card.brand}</span>
+                      {!isWallet && (
+                        <div className="flex gap-1">
+                          <button onClick={() => setPrimaryMutation.mutate(card.id)} className="p-1 hover:bg-white/20 rounded">
+                            <Star className={cn("h-3.5 w-3.5", card.isPrimary ? "fill-yellow-300 text-yellow-300" : "text-white/50")} />
+                          </button>
+                          <button onClick={() => deleteCardMutation.mutate(card.id)} className="p-1 hover:bg-white/20 rounded">
+                            <Trash2 className="h-3.5 w-3.5 text-white/50" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card chip */}
+                  <div className="mt-3 flex gap-1.5">
+                    <div className="w-10 h-6 bg-yellow-400/70 rounded" />
+                    <div className="w-8 h-6 bg-red-500/60 rounded" />
                   </div>
                 </div>
-                <div className="mt-2 flex gap-1.5">
-                  <div className="w-8 h-5 bg-yellow-400/60 rounded-sm" />
-                  <div className="w-8 h-5 bg-red-500/60 rounded-sm" />
-                </div>
               </div>
-            );
-          })}
 
-          {/* Add card button */}
+              {/* Action buttons for this card */}
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <Button className="h-11 gap-2" onClick={() => setTopupDialog(true)}>
+                  <Plus className="h-4 w-4" /> شحن
+                </Button>
+                <Button variant="outline" className="h-11 gap-2" onClick={() => setWithdrawDialog(true)}>
+                  <ArrowUp className="h-4 w-4" /> سحب
+                </Button>
+              </div>
+
+              {/* Transactions for this card */}
+              <div className="mt-5">
+                <h3 className="font-bold text-gray-900 mb-2 text-sm">
+                  {isWallet ? "سجل العمليات" : `سجل ${card.name}`}
+                </h3>
+                <div className="relative mb-2">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="ابحث..."
+                    value={txSearch}
+                    onChange={(e) => setTxSearch(e.target.value)}
+                    className="h-9 pr-9 text-sm"
+                  />
+                </div>
+                {isLoading ? (
+                  [1,2,3].map(i => <Skeleton key={i} className="h-12 w-full mb-1" />)
+                ) : activeTransactions.length > 0 ? (
+                  <div className="bg-white rounded-xl shadow-sm p-1.5 space-y-0.5">
+                    {activeTransactions.map((tx: any) => <TransactionItem key={tx.id} tx={tx} />)}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-400 text-sm">
+                    {isWallet ? "لا توجد عمليات بعد" : "لا توجد عمليات على هذه البطاقة"}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Add new card slide */}
+        <div className="snap-center flex-shrink-0 w-full p-4 flex items-center justify-center">
           <button
             onClick={() => setAddCardDialog(true)}
-            className="snap-start flex-shrink-0 w-[300px] border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors min-h-[160px]"
+            className="w-full border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors min-h-[200px]"
           >
-            <Plus className="h-8 w-8 mb-2" />
-            <span className="text-sm">ربط بطاقة جديدة</span>
+            <Plus className="h-10 w-10 mb-2" />
+            <span className="font-medium">ربط بطاقة جديدة</span>
+            <span className="text-xs text-gray-400 mt-1">Visa / Mastercard / Meeza</span>
           </button>
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="px-4 grid grid-cols-2 gap-3">
-        <Button className="h-12 gap-2" onClick={() => setTopupDialog(true)}>
-          <Plus className="h-5 w-5" /> شحن المحفظة
-        </Button>
-        <Button variant="outline" className="h-12 gap-2" onClick={() => setWithdrawDialog(true)}>
-          <ArrowUp className="h-5 w-5" /> سحب
-        </Button>
-      </div>
-
-      {/* Transactions */}
-      <div className="px-4 mt-6">
-        <h2 className="font-bold text-gray-900 mb-3">سجل العمليات</h2>
-        <div className="relative mb-3">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="ابحث في العمليات... (الوصف، النوع، المبلغ، المرجع)"
-            value={txSearch}
-            onChange={(e) => setTxSearch(e.target.value)}
-            className="h-10 pr-9"
+      {/* Card indicator dots */}
+      <div className="flex justify-center gap-1.5 pb-2">
+        {allCards.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => scrollToCard(i)}
+            className={cn(
+              "h-1.5 rounded-full transition-all",
+              i === activeCardIndex ? "w-6 bg-blue-600" : "w-1.5 bg-gray-300"
+            )}
           />
-        </div>
-        {isLoading ? (
-          [1,2,3,4,5].map(i => <Skeleton key={i} className="h-14 w-full mb-1" />)
-        ) : transactions.length > 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm p-2 space-y-1">
-            {transactions.map((tx: any) => <TransactionItem key={tx.id} tx={tx} />)}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-400 text-sm">لا توجد عمليات بعد</div>
-        )}
+        ))}
+        {/* Dot for add card slide */}
+        <button
+          onClick={() => scrollToCard(allCards.length)}
+          className={cn(
+            "h-1.5 rounded-full transition-all",
+            allCards.length === activeCardIndex ? "w-6 bg-blue-600" : "w-1.5 bg-gray-300"
+          )}
+        />
       </div>
 
       {/* Top Up Dialog */}
