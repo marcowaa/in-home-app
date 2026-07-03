@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Loader2, Check, Search, Plus, Trash2,
   ShoppingCart, Wrench, Home, FileText, Boxes,
-  Calendar, Shield, User, Truck,
+  Calendar, Shield, User, Truck, Headphones, Clock, ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,10 @@ export default function ContractCreate() {
   const [creatorRole, setCreatorRole] = useState<"seeker" | "provider">("seeker");
   const [isPublic, setIsPublic] = useState(false);
   const [requiredFreezeRate, setRequiredFreezeRate] = useState("0");
+
+  // Flexible duration (for inspection period, rental period, deadline)
+  const [durationUnit, setDurationUnit] = useState<"minutes" | "hours" | "days" | "months">("hours");
+  const [durationValue, setDurationValue] = useState(24);
 
   // Step 3 - service: milestones
   const [milestones, setMilestones] = useState<{ title: string; amount: string }[]>([
@@ -126,7 +130,7 @@ export default function ContractCreate() {
       payload.deliveryFeeRate = parseFloat(deliveryFeeRate) / 100;
       payload.pickupAddress = pickupAddress;
       payload.deliveryAddress = deliveryAddress;
-      payload.terms = { inspectionPeriodHours: inspectionHours };
+      payload.terms = { inspectionPeriodHours: durationValue, inspectionPeriodUnit: durationUnit };
     } else if (contractType === "service") {
       payload.milestones = milestones.filter((m) => m.title && m.amount);
     } else if (contractType === "rental") {
@@ -198,6 +202,21 @@ export default function ContractCreate() {
             >
               <h2 className="font-semibold text-gray-900 mb-1">اختر نوع العقد</h2>
               <p className="text-sm text-gray-500 mb-4">حدد نوع العقد لبدء الإنشاء</p>
+
+              {/* Advisor button */}
+              <button
+                onClick={() => navigate("/app/support?category=contract&subject=طلب مستشار لعقد")}
+                className="w-full bg-gradient-to-l from-amber-500 to-orange-500 text-white rounded-2xl p-3 flex items-center gap-3 mb-4 hover:shadow-lg transition-shadow"
+              >
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Headphones className="h-5 w-5" />
+                </div>
+                <div className="flex-1 text-right">
+                  <p className="font-semibold text-sm">استعن بمستشار عقود</p>
+                  <p className="text-xs text-amber-50">مستشار يصيغ لك عقداً محكماً — خدمة بمقابل مادي</p>
+                </div>
+                <ChevronLeft className="h-5 w-5 text-white" />
+              </button>
               <div className="grid grid-cols-1 gap-3">
                 {contractTypes.map((t) => {
                   const Icon = t.icon;
@@ -501,23 +520,51 @@ export default function ContractCreate() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-2 block">مدة الفحص</label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <label className="text-sm font-medium mb-2 block flex items-center gap-1">
+                      <Clock className="h-4 w-4 text-blue-600" /> مدة الفحص
+                    </label>
+                    {/* Unit selector */}
+                    <div className="grid grid-cols-4 gap-1.5 mb-3">
                       {[
-                        { v: 12, l: "12 ساعة" },
-                        { v: 24, l: "24 ساعة" },
-                        { v: 48, l: "48 ساعة" },
-                      ].map((o) => (
+                        { v: "minutes", l: "دقائق" },
+                        { v: "hours", l: "ساعات" },
+                        { v: "days", l: "أيام" },
+                        { v: "months", l: "شهور" },
+                      ].map((u) => (
                         <button
-                          key={o.v}
-                          onClick={() => setInspectionHours(o.v)}
-                          className={`py-3 rounded-lg text-sm ${
-                            inspectionHours === o.v ? "bg-blue-600 text-white" : "bg-gray-100"
-                          }`}
+                          key={u.v}
+                          onClick={() => { setDurationUnit(u.v as any); setDurationValue(u.v === "minutes" ? 30 : u.v === "hours" ? 24 : u.v === "days" ? 7 : 1); }}
+                          className={`py-2 rounded-lg text-xs font-medium ${durationUnit === u.v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"}`}
                         >
-                          {o.l}
+                          {u.l}
                         </button>
                       ))}
+                    </div>
+                    {/* Slider */}
+                    <div className="bg-blue-50 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-500">المدة</span>
+                        <span className="font-bold text-blue-700 text-lg">
+                          {durationValue} {durationUnit === "minutes" ? "دقيقة" : durationUnit === "hours" ? "ساعة" : durationUnit === "days" ? "يوم" : "شهر"}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={durationUnit === "minutes" ? 5 : durationUnit === "hours" ? 1 : durationUnit === "days" ? 1 : 1}
+                        max={durationUnit === "minutes" ? 120 : durationUnit === "hours" ? 72 : durationUnit === "days" ? 90 : 12}
+                        step={durationUnit === "minutes" ? 5 : durationUnit === "hours" ? 1 : durationUnit === "days" ? 1 : 1}
+                        value={durationValue}
+                        onChange={(e) => setDurationValue(parseInt(e.target.value))}
+                        className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                        <span>
+                          {durationUnit === "minutes" ? 5 : durationUnit === "hours" ? 1 : 1} {durationUnit === "minutes" ? "د" : durationUnit === "hours" ? "س" : "ي"}
+                        </span>
+                        <span>
+                          {durationUnit === "minutes" ? 120 : durationUnit === "hours" ? 72 : durationUnit === "days" ? 90 : 12}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </>
