@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import BottomNav from "./BottomNav";
+import ContractAdvisorButton from "./ContractAdvisorButton";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [, navigate] = useLocation();
@@ -33,6 +34,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <div className="max-w-[480px] mx-auto min-h-screen bg-white shadow-xl relative pb-20">
         {children}
         <BottomNav />
+        <ContractAdvisorButton />
       </div>
     </div>
   );
