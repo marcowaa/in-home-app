@@ -93,8 +93,15 @@ export function registerUserRoutes(app: Express) {
     }
     // Mock OTP: always return 1234 for demo
     const otp = "1234";
-    // In production, send SMS here
-    res.json({ sent: true, otp, message: "تم إرسال الكود" });
+
+    // Build message with fraud protection code from settings
+    const settings = await storage.getSettings();
+    const fraudCode = (settings as any)?.fraudCode || "AB12";
+    const template = (settings as any)?.otpMessageTemplate || "كود التحقق: {OTP} | رمز الحماية: {FRAUD_CODE}";
+    const fullMessage = template.replace("{OTP}", otp).replace("{FRAUD_CODE}", fraudCode);
+
+    // In production, send SMS with fullMessage here
+    res.json({ sent: true, otp, message: fullMessage, fraudCode });
   });
 
   // Verify OTP + login/register

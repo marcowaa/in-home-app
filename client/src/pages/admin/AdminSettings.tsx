@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Save, Loader2, Phone, Image, Truck, Globe, Type, Headset } from "lucide-react";
+import { Save, Loader2, Phone, Image, Truck, Globe, Type, Headset, Shield, DollarSign, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -45,6 +45,19 @@ export default function AdminSettings() {
         supportButtonType: (settings as any).supportButtonType || "whatsapp",
         supportButtonValue: (settings as any).supportButtonValue || "",
         supportButtonLabel: (settings as any).supportButtonLabel || "تواصل معنا",
+        // New settings
+        fraudCode: (settings as any).fraudCode || "AB12",
+        otpMessageTemplate: (settings as any).otpMessageTemplate || "كود التحقق: {OTP} | رمز الحماية: {FRAUD_CODE}",
+        advisorFeeRate: (settings as any).advisorFeeRate || "0.05",
+        advisorConsultationFee: (settings as any).advisorConsultationFee || "25",
+        maxDailyTransfers: (settings as any).maxDailyTransfers || 10,
+        maxTransferAmount: (settings as any).maxTransferAmount || "50000",
+        minTransferAmount: (settings as any).minTransferAmount || "1",
+        transferFeeRate: (settings as any).transferFeeRate || "0.005",
+        transferFeeFixed: (settings as any).transferFeeFixed || "2",
+        contractAutoCompleteHours: (settings as any).contractAutoCompleteHours || 48,
+        disputeTimeoutHours: (settings as any).disputeTimeoutHours || 168,
+        maxActiveContracts: (settings as any).maxActiveContracts || 20,
       });
     }
   }, [settings]);
@@ -496,7 +509,153 @@ export default function AdminSettings() {
                   onChange={(e) => setFormData({ ...formData, referralBonusAmount: e.target.value })}
                   dir="ltr"
                 />
-                <p className="text-xs text-muted-foreground">المبلغ الذي يحصل عليه المندوب عند إحالة مندوب جديد (يُضاف للمحفظة بعد موافقة الأدمن)</p>
+                <p className="text-xs text-muted-foreground">المبلغ الذي يحصل عليه المندوب عند إحالة مندوب جديد</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Fraud Protection Code */}
+          <Card className="border-red-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-red-600" /> رمز الحماية من الاحتيال
+              </CardTitle>
+              <CardDescription>رمز secret يظهر في رسالة OTP ليتميز العميل الرسائل الحقيقية عن رسائل التصيد</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fraudCode">رمز الحماية (4 أحرف/أرقام)</Label>
+                <Input
+                  id="fraudCode"
+                  value={(formData as any).fraudCode || ""}
+                  onChange={(e) => setFormData({ ...formData, fraudCode: e.target.value.toUpperCase() } as any)}
+                  placeholder="AB12"
+                  maxLength={4}
+                  dir="ltr"
+                  className="text-center text-xl font-bold tracking-widest"
+                />
+                <p className="text-xs text-red-500">⚠️ هذا الرمز سيظهر في كل رسالة OTP. أخبر العملاء به شخصياً ولا تنشره علناً.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="otpMessageTemplate">قالب رسالة OTP</Label>
+                <Textarea
+                  id="otpMessageTemplate"
+                  value={(formData as any).otpMessageTemplate || ""}
+                  onChange={(e) => setFormData({ ...formData, otpMessageTemplate: e.target.value } as any)}
+                  placeholder="كود التحقق: {OTP} | رمز الحماية: {FRAUD_CODE}"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  استخدم <code className="bg-gray-100 px-1 rounded">{`{OTP}`}</code> لكود التحقق و <code className="bg-gray-100 px-1 rounded">{`{FRAUD_CODE}`}</code> لرمز الحماية
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Transfer Limits */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-green-600" /> حدود التحويلات
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="minTransferAmount">الحد الأدنى للتحويل (ج.م)</Label>
+                  <Input id="minTransferAmount" type="number" dir="ltr"
+                    value={(formData as any).minTransferAmount || ""}
+                    onChange={(e) => setFormData({ ...formData, minTransferAmount: e.target.value } as any)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maxTransferAmount">الحد الأقصى للتحويل (ج.م)</Label>
+                  <Input id="maxTransferAmount" type="number" dir="ltr"
+                    value={(formData as any).maxTransferAmount || ""}
+                    onChange={(e) => setFormData({ ...formData, maxTransferAmount: e.target.value } as any)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="maxDailyTransfers">حد التحويلات اليومية</Label>
+                  <Input id="maxDailyTransfers" type="number" dir="ltr"
+                    value={(formData as any).maxDailyTransfers || ""}
+                    onChange={(e) => setFormData({ ...formData, maxDailyTransfers: parseInt(e.target.value) } as any)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="transferFeeRate">رسوم التحويل (%)</Label>
+                  <Input id="transferFeeRate" type="number" step="0.1" dir="ltr"
+                    value={(formData as any).transferFeeRate || ""}
+                    onChange={(e) => setFormData({ ...formData, transferFeeRate: e.target.value } as any)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="transferFeeFixed">رسوم ثابتة للتحويل (ج.م)</Label>
+                <Input id="transferFeeFixed" type="number" dir="ltr"
+                  value={(formData as any).transferFeeFixed || ""}
+                  onChange={(e) => setFormData({ ...formData, transferFeeFixed: e.target.value } as any)} />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Advisor Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Headset className="h-5 w-5 text-amber-600" /> إعدادات المستشار
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="advisorConsultationFee">رسوم الاستشارة الثابتة (ج.م)</Label>
+                  <Input id="advisorConsultationFee" type="number" dir="ltr"
+                    value={(formData as any).advisorConsultationFee || ""}
+                    onChange={(e) => setFormData({ ...formData, advisorConsultationFee: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">تُخصم عند بدء المحادثة</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advisorFeeRate">عمولة المستشار (%)</Label>
+                  <Input id="advisorFeeRate" type="number" step="0.1" dir="ltr"
+                    value={(formData as any).advisorFeeRate || ""}
+                    onChange={(e) => setFormData({ ...formData, advisorFeeRate: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">نسبة من قيمة العقد</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Contract Automation */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" /> أتمتة العقود
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="contractAutoCompleteHours">إكمال تلقائي بعد (ساعة)</Label>
+                  <Input id="contractAutoCompleteHours" type="number" dir="ltr"
+                    value={(formData as any).contractAutoCompleteHours || ""}
+                    onChange={(e) => setFormData({ ...formData, contractAutoCompleteHours: parseInt(e.target.value) } as any)} />
+                  <p className="text-xs text-muted-foreground">إذا لم يرفض المشتري بعد التسليم، يُكمّل تلقائياً</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="disputeTimeoutHours">انتهاء النزاع بعد (ساعة)</Label>
+                  <Input id="disputeTimeoutHours" type="number" dir="ltr"
+                    value={(formData as any).disputeTimeoutHours || ""}
+                    onChange={(e) => setFormData({ ...formData, disputeTimeoutHours: parseInt(e.target.value) } as any)} />
+                  <p className="text-xs text-muted-foreground">تصعيد تلقائي للأدمن إذا لم يُحل النزاع</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maxActiveContracts">حد العقود النشطة للمستخدم</Label>
+                  <Input id="maxActiveContracts" type="number" dir="ltr"
+                    value={(formData as any).maxActiveContracts || ""}
+                    onChange={(e) => setFormData({ ...formData, maxActiveContracts: parseInt(e.target.value) } as any)} />
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 text-orange-500" /> منع إنشاء عقود لا نهائية
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

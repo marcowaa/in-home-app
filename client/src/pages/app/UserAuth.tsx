@@ -16,6 +16,8 @@ export default function UserAuth() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [demoOtp, setDemoOtp] = useState("");
+  const [otpMessage, setOtpMessage] = useState("");
+  const [fraudCode, setFraudCode] = useState("");
 
   const demoLoginMutation = useMutation({
     mutationFn: (data: { phone?: string; name?: string }) => apiRequest("POST", "/api/user/auth/demo-login", data),
@@ -36,8 +38,10 @@ export default function UserAuth() {
     onSuccess: async (res) => {
       const data = await res.json();
       setDemoOtp(data.otp);
+      setOtpMessage(data.message || "");
+      setFraudCode(data.fraudCode || "");
       setStep("otp");
-      toast({ title: "تم إرسال الكود", description: `كود التحقق: ${data.otp}` });
+      toast({ title: "تم إرسال الكود", description: data.message || `كود التحقق: ${data.otp}` });
     },
     onError: () => toast({ title: "خطأ", description: "فشل إرسال الكود", variant: "destructive" }),
   });
@@ -143,8 +147,16 @@ export default function UserAuth() {
                 </InputOTP>
               </div>
               {demoOtp && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-center">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-center space-y-2">
                   <p className="text-xs text-blue-600">كود تجريبي: <span className="font-bold text-lg">{demoOtp}</span></p>
+                  {otpMessage && (
+                    <div className="bg-white rounded-lg p-2 text-xs text-gray-600 border border-blue-100">
+                      <p className="font-mono">{otpMessage}</p>
+                    </div>
+                  )}
+                  {fraudCode && (
+                    <p className="text-[10px] text-green-600">🔒 رمز الحماية: {fraudCode} — تأكد من وجوده في كل رسالة حقيقية</p>
+                  )}
                 </div>
               )}
               <Button

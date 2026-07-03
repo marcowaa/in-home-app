@@ -18,7 +18,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { requireApiKey, generateApiKey, generateSecretKey, API_PERMISSIONS, PERMISSION_LABELS } from "./apiMiddleware";
 import { triggerWebhook, WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS } from "./webhooks";
 import connectPgSimple from "connect-pg-simple";
-import { pool } from "./db";
+import { pool, db } from "./db";
 import { generateDbName, createTenantDatabase, initializeTenantDatabase, dropTenantDatabase } from "./tenantDb";
 import { registerUserRoutes } from "./userRoutes";
 import { registerContractRoutes } from "./contractRoutes";
