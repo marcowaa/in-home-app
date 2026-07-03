@@ -220,7 +220,10 @@ export function registerContractRoutes(app: Express) {
     let advisorFee = 0;
     if (useAdvisor) {
       const settings = await storage.getSettings();
-      advisorFee = amt * (parseFloat((settings as any)?.advisorFeeRate || "0.05"));
+      // Fixed consultation fee (charged when advisor starts chatting) + percentage of contract value
+      const consultationFee = parseFloat((settings as any)?.advisorConsultationFee || "25");
+      const advisorFeeRate = parseFloat((settings as any)?.advisorFeeRate || "0.05");
+      advisorFee = consultationFee + (amt * advisorFeeRate);
     }
 
     // Freeze logic:
