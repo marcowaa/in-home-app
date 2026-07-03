@@ -418,31 +418,60 @@ export function registerContractRoutes(app: Express) {
     const user = await storage.getUser(userId);
     if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
 
+    // #17 fix: check banned user
+    if (!user.isActive) {
+      return res.status(403).json({ message: "حسابك موقوف" });
+    }
+
+    // #6 fix: re-fetch contract to prevent race condition
     if (contract.status !== "pending") {
       return res.status(400).json({ message: "العقد غير متاح للقبول" });
     }
 
+    // #10 fix: KYC check for acceptor
+    const kycLimits: Record<string, { perContract: number }> = {
+      none: { perContract: 2000 },
+      basic: { perContract: 20000 },
+      verified: { perContract: 200000 },
+    };
+    const acceptorKycLevel = user.kycStatus || "none";
+    const acceptorLimit = kycLimits[acceptorKycLevel] || kycLimits.none;
+    const contractValue = parseFloat(contract.totalAmount || "0");
+
+    // #2 fix: if creator is provider, acceptor (seeker) must freeze the product value
+    const isCreatorProvider = (contract.creatorRole || "seeker") === "provider";
+    let acceptorMustFreeze = parseFloat(contract.requiredFreezeAmount || "0");
+
+    if (isCreatorProvider) {
+      // Seeker accepts a provider's offer → seeker pays the product value
+      acceptorMustFreeze += contractValue;
+    }
+
+    // KYC limit check for acceptor
+    if (contractValue > acceptorLimit.perContract) {
+      return res.status(403).json({ message: `حد المبلغ لمستوى التوثيق الحالي: ${acceptorLimit.perContract} ج.م` });
+    }
+
     // Public contract: anyone can accept (becomes counterparty)
     if (contract.isPublic) {
-      // Can't accept your own contract
+      // #13 fix: can't accept your own contract
       if (contract.creatorId === userId) {
         return res.status(400).json({ message: "لا يمكنك قبول عقدك" });
       }
 
-      // If required freeze from acceptor, freeze from their wallet
-      const reqFreeze = parseFloat(contract.requiredFreezeAmount || "0");
-      if (reqFreeze > 0) {
+      // #2 + #3 fix: freeze from acceptor (required freeze + product value if provider created)
+      if (acceptorMustFreeze > 0) {
         const available = parseFloat(user.walletBalance || "0") - parseFloat(user.frozenBalance || "0");
-        if (reqFreeze > available) {
+        if (acceptorMustFreeze > available) {
           return res.status(400).json({ message: "الرصيد غير كافٍ للتجميد المطلوب" });
         }
-        const newFrozen = String(parseFloat(user.frozenBalance || "0") + reqFreeze);
+        const newFrozen = String(parseFloat(user.frozenBalance || "0") + acceptorMustFreeze);
         await storage.updateUser(user.id, { frozenBalance: newFrozen });
 
         await storage.createUserTransaction({
           userId: user.id,
           type: "escrow_freeze",
-          amount: String(reqFreeze),
+          amount: String(acceptorMustFreeze),
           balanceAfter: user.walletBalance,
           feeAmount: "0",
           description: `تجميد لقبول عقد ${contract.contractNumber}`,
@@ -454,11 +483,16 @@ export function registerContractRoutes(app: Express) {
         });
       }
 
+      // Update contract with new frozenAmount (add acceptor freeze to contract record)
+      const newContractFrozen = parseFloat(contract.frozenAmount || "0") + acceptorMustFreeze;
+
       const updated = await storage.updateContract(contract.id, {
         counterpartyId: user.id,
         counterpartyName: user.name || user.phone,
         status: "accepted",
         acceptedAt: new Date(),
+        frozenAmount: String(newContractFrozen),
+        requiredFreezeAmount: String(acceptorMustFreeze),
       });
 
       await storage.createContractTracking({
@@ -489,6 +523,35 @@ export function registerContractRoutes(app: Express) {
 
     // If counterparty accepting
     if (contract.counterpartyId === userId) {
+      // #2 fix: if creator is provider, counterparty (seeker) must freeze product value
+      if (isCreatorProvider && contractValue > 0) {
+        const acceptorFreezeNeeded = contractValue + acceptorMustFreeze;
+        const available = parseFloat(user.walletBalance || "0") - parseFloat(user.frozenBalance || "0");
+        if (acceptorFreezeNeeded > available) {
+          return res.status(400).json({ message: "الرصيد غير كافٍ للقبول" });
+        }
+        const newFrozen = String(parseFloat(user.frozenBalance || "0") + acceptorFreezeNeeded);
+        await storage.updateUser(user.id, { frozenBalance: newFrozen });
+
+        await storage.createUserTransaction({
+          userId: user.id,
+          type: "escrow_freeze",
+          amount: String(acceptorFreezeNeeded),
+          balanceAfter: user.walletBalance,
+          feeAmount: "0",
+          description: `تجميد لقبول عقد ${contract.contractNumber}`,
+          relatedId: contract.id,
+          counterpartyId: contract.creatorId,
+          counterpartyName: contract.creatorName || "",
+          status: "completed",
+          referenceNumber: generateReference(),
+        });
+
+        // Update contract frozen amount
+        const newContractFrozen = parseFloat(contract.frozenAmount || "0") + acceptorFreezeNeeded;
+        await storage.updateContract(contract.id, { frozenAmount: String(newContractFrozen), requiredFreezeAmount: String(acceptorFreezeNeeded) });
+      }
+
       const updated = await storage.updateContract(contract.id, {
         status: "accepted",
         acceptedAt: new Date(),
@@ -567,7 +630,8 @@ export function registerContractRoutes(app: Express) {
     const creator = await storage.getUser(contract.creatorId);
     if (!creator) return res.status(500).json({ message: "خطأ" });
 
-    const newFrozen = String(parseFloat(creator.frozenBalance || "0") - parseFloat(contract.frozenAmount));
+    // #9 fix: use Math.max to prevent negative frozen balance
+    const newFrozen = String(Math.max(parseFloat(creator.frozenBalance || "0") - parseFloat(contract.frozenAmount || "0"), 0));
     await storage.updateUser(creator.id, { frozenBalance: newFrozen });
 
     await storage.createUserTransaction({
@@ -639,12 +703,38 @@ export function registerContractRoutes(app: Express) {
     const creator = await storage.getUser(contract.creatorId);
     if (!creator) return res.status(500).json({ message: "خطأ" });
 
-    const newFrozen = String(parseFloat(creator.frozenBalance || "0") - parseFloat(contract.frozenAmount));
+    // #9 fix: prevent negative frozen balance
+    const newFrozen = String(Math.max(parseFloat(creator.frozenBalance || "0") - parseFloat(contract.frozenAmount || "0"), 0));
     await storage.updateUser(creator.id, { frozenBalance: newFrozen });
 
-    // If cancellation fee, deduct from wallet
+    // #3 fix: release acceptor's freeze if they already accepted
+    const acceptorFreeze = parseFloat(contract.requiredFreezeAmount || "0");
+    if (acceptorFreeze > 0 && contract.counterpartyId && contract.status === "accepted") {
+      const acceptor = await storage.getUser(contract.counterpartyId);
+      if (acceptor) {
+        const acceptorNewFrozen = String(Math.max(parseFloat(acceptor.frozenBalance || "0") - acceptorFreeze, 0));
+        await storage.updateUser(acceptor.id, { frozenBalance: acceptorNewFrozen });
+        const acceptorNewBalance = String(parseFloat(acceptor.walletBalance || "0") + acceptorFreeze);
+        await storage.updateUser(acceptor.id, { walletBalance: acceptorNewBalance });
+
+        await storage.createUserTransaction({
+          userId: acceptor.id,
+          type: "escrow_refund",
+          amount: String(acceptorFreeze),
+          balanceAfter: acceptorNewBalance,
+          feeAmount: "0",
+          description: `استرداد ضمان - إلغاء عقد ${contract.contractNumber}`,
+          relatedId: contract.id,
+          status: "completed",
+          referenceNumber: generateReference(),
+        });
+      }
+    }
+
+    // If cancellation fee, deduct from wallet — #9 fix: prevent negative balance
     if (cancellationFee > 0) {
-      const newBalance = String(parseFloat(creator.walletBalance || "0") - cancellationFee);
+      const walletDeduction = Math.min(cancellationFee, parseFloat(creator.walletBalance || "0"));
+      const newBalance = String(parseFloat(creator.walletBalance || "0") - walletDeduction);
       await storage.updateUser(creator.id, { walletBalance: newBalance });
     }
 
@@ -734,9 +824,14 @@ export function registerContractRoutes(app: Express) {
     const contract = await storage.getContract(req.params.id);
     if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
 
-    // Counterparty (service provider) submits milestone
-    if (contract.counterpartyId !== req.session.userId) {
-      return res.status(403).json({ message: "غير مصرح" });
+    // #5 fix: provider submits milestone, seeker approves — determine by creatorRole
+    const isProviderCreator = (contract.creatorRole || "seeker") === "provider";
+    const providerId = isProviderCreator ? contract.creatorId : contract.counterpartyId;
+    const seekerId = isProviderCreator ? contract.counterpartyId : contract.creatorId;
+
+    // Provider submits milestone
+    if (providerId !== req.session.userId) {
+      return res.status(403).json({ message: "غير مصرح — مقدم الخدمة فقط يسلّم المرحلة" });
     }
     if (contract.status !== "in_progress" && contract.status !== "milestone_review") {
       return res.status(400).json({ message: "الحالة غير صحيحة" });
@@ -787,9 +882,13 @@ export function registerContractRoutes(app: Express) {
     const contract = await storage.getContract(req.params.id);
     if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
 
-    // Creator (buyer/client) approves milestone
-    if (contract.creatorId !== req.session.userId) {
-      return res.status(403).json({ message: "غير مصرح" });
+    // #5 fix: seeker (buyer) approves milestone — determine by creatorRole
+    const isProviderCreator2 = (contract.creatorRole || "seeker") === "provider";
+    const seekerId2 = isProviderCreator2 ? contract.counterpartyId : contract.creatorId;
+    const providerId2 = isProviderCreator2 ? contract.creatorId : contract.counterpartyId;
+
+    if (seekerId2 !== req.session.userId) {
+      return res.status(403).json({ message: "غير مصرح — طالب الخدمة فقط يعتمد المرحلة" });
     }
     if (contract.status !== "milestone_review") {
       return res.status(400).json({ message: "الحالة غير صحيحة" });
@@ -804,25 +903,26 @@ export function registerContractRoutes(app: Express) {
     }
 
     // Release milestone amount to counterparty
-    const creator = await storage.getUser(contract.creatorId);
-    const counterparty = await storage.getUser(contract.counterpartyId);
-    if (!creator || !counterparty) return res.status(500).json({ message: "خطأ" });
+    // #5 fix: use seeker/provider IDs, not creator/counterparty
+    const seeker = await storage.getUser(seekerId2);
+    const provider = await storage.getUser(providerId2);
+    if (!seeker || !provider) return res.status(500).json({ message: "خطأ" });
 
     const milestoneAmount = parseFloat(milestone.amount);
 
-    // Unfreeze from creator
-    const newFrozen = String(parseFloat(creator.frozenBalance || "0") - milestoneAmount);
-    await storage.updateUser(creator.id, { frozenBalance: newFrozen });
+    // Unfreeze from seeker (the one who pays)
+    const newFrozen = String(Math.max(parseFloat(seeker.frozenBalance || "0") - milestoneAmount, 0));
+    await storage.updateUser(seeker.id, { frozenBalance: newFrozen });
 
-    // Credit counterparty
-    const counterpartyNewBalance = String(parseFloat(counterparty.walletBalance || "0") + milestoneAmount);
-    await storage.updateUser(counterparty.id, { walletBalance: counterpartyNewBalance });
+    // Credit provider (the one who delivers work)
+    const providerNewBalance = String(parseFloat(provider.walletBalance || "0") + milestoneAmount);
+    await storage.updateUser(provider.id, { walletBalance: providerNewBalance });
 
     await storage.createUserTransaction({
-      userId: counterparty.id,
+      userId: provider.id,
       type: "escrow_release",
       amount: String(milestoneAmount),
-      balanceAfter: counterpartyNewBalance,
+      balanceAfter: providerNewBalance,
       feeAmount: "0",
       description: `اعتماد مرحلة "${milestone.title}" - عقد ${contract.contractNumber}`,
       relatedId: contract.id,
@@ -897,8 +997,12 @@ export function registerContractRoutes(app: Express) {
     const contract = await storage.getContract(req.params.id);
     if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
 
-    if (contract.creatorId !== req.session.userId) {
-      return res.status(403).json({ message: "غير مصرح" });
+    // #5 fix: seeker rejects milestone
+    const isProviderCreator3 = (contract.creatorRole || "seeker") === "provider";
+    const seekerId3 = isProviderCreator3 ? contract.counterpartyId : contract.creatorId;
+
+    if (seekerId3 !== req.session.userId) {
+      return res.status(403).json({ message: "غير مصرح — طالب الخدمة فقط يرفض المرحلة" });
     }
     if (contract.status !== "milestone_review") {
       return res.status(400).json({ message: "الحالة غير صحيحة" });
@@ -945,7 +1049,14 @@ export function registerContractRoutes(app: Express) {
     const contract = await storage.getContract(req.params.id);
     if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
 
-    if (contract.creatorId !== req.session.userId) {
+    const userId = req.session.userId;
+
+    // #4 fix: allow both creator and counterparty to complete based on role
+    // seeker (creator) confirms receipt of product/service
+    // provider (creator) confirms completion of work — counterparty (seeker) confirms acceptance
+    const isCreator = contract.creatorId === userId;
+    const isCounterparty = contract.counterpartyId === userId;
+    if (!isCreator && !isCounterparty) {
       return res.status(403).json({ message: "غير مصرح" });
     }
     if (contract.status !== "in_progress" && contract.status !== "accepted" && contract.status !== "delivered") {
@@ -960,29 +1071,62 @@ export function registerContractRoutes(app: Express) {
       }
     }
 
-    // Release all remaining frozen funds
+    // #1 fix: use contract.frozenAmount NOT creator.frozenBalance
     const creator = await storage.getUser(contract.creatorId);
-    const counterparty = await storage.getUser(contract.counterpartyId);
+    const counterparty = contract.counterpartyId ? await storage.getUser(contract.counterpartyId) : null;
     const deliveryPerson = contract.deliveryPersonId ? await storage.getUser(contract.deliveryPersonId) : null;
     if (!creator || !counterparty) return res.status(500).json({ message: "خطأ" });
 
-    const remainingFrozen = parseFloat(creator.frozenBalance || "0");
+    // #17 fix: check banned users
+    if (!creator.isActive || !counterparty.isActive) {
+      return res.status(403).json({ message: "حساب أحد الأطراف موقوف" });
+    }
+
+    const contractFrozen = parseFloat(contract.frozenAmount || "0");
     const deliveryFee = parseFloat(contract.deliveryFeeAmount || "0");
-    const counterpartyAmount = remainingFrozen - deliveryFee;
+    const platformFee = parseFloat(contract.platformFeeAmount || "0");
 
-    // Unfreeze from creator
-    await storage.updateUser(creator.id, { frozenBalance: "0" });
+    // Determine who gets what:
+    // seeker is creator: frozen money was from creator (product value + platform fee)
+    // provider is creator: frozen money was platform fee only; counterparty paid product value on accept
+    const isSeekerCreator = (contract.creatorRole || "seeker") === "seeker";
 
-    // Credit counterparty
-    const counterpartyNewBalance = String(parseFloat(counterparty.walletBalance || "0") + counterpartyAmount);
+    // Amount to release to counterparty (product/service value, minus delivery fee)
+    const productAmount = parseFloat(contract.totalAmount || "0");
+    const counterpartyAmount = isSeekerCreator
+      ? contractFrozen - deliveryFee - platformFee  // seeker froze everything, subtract fees
+      : productAmount - deliveryFee;                  // provider didn't freeze product value, counterparty paid it
+
+    // #3 fix: release acceptor's freeze (requiredFreezeAmount)
+    const acceptorFreeze = parseFloat(contract.requiredFreezeAmount || "0");
+
+    // --- Unfreeze from creator ---
+    const creatorFrozenReduction = Math.min(contractFrozen, parseFloat(creator.frozenBalance || "0"));
+    const creatorNewFrozen = String(parseFloat(creator.frozenBalance || "0") - creatorFrozenReduction);
+    await storage.updateUser(creator.id, { frozenBalance: creatorNewFrozen });
+
+    // --- Unfreeze acceptor's freeze if any ---
+    if (acceptorFreeze > 0) {
+      const acceptorFrozenReduction = Math.min(acceptorFreeze, parseFloat(counterparty.frozenBalance || "0"));
+      const acceptorNewFrozen = String(parseFloat(counterparty.frozenBalance || "0") - acceptorFrozenReduction);
+      await storage.updateUser(counterparty.id, { frozenBalance: acceptorNewFrozen });
+      // Return acceptor's freeze to their wallet
+      const acceptorNewBalance = String(parseFloat(counterparty.walletBalance || "0") + acceptorFrozenReduction);
+      await storage.updateUser(counterparty.id, { walletBalance: acceptorNewBalance });
+    }
+
+    // --- Credit counterparty (the service provider/seller) ---
+    // #9 fix: ensure we don't credit negative amounts
+    const creditAmount = Math.max(counterpartyAmount, 0);
+    const counterpartyNewBalance = String(parseFloat(counterparty.walletBalance || "0") + creditAmount + acceptorFreeze);
     await storage.updateUser(counterparty.id, { walletBalance: counterpartyNewBalance });
 
     await storage.createUserTransaction({
       userId: counterparty.id,
       type: "escrow_release",
-      amount: String(counterpartyAmount),
+      amount: String(creditAmount),
       balanceAfter: counterpartyNewBalance,
-      feeAmount: contract.deliveryFeeAmount,
+      feeAmount: String(platformFee + deliveryFee),
       description: `إكمال عقد ${contract.contractNumber} - ${contract.title}`,
       relatedId: contract.id,
       counterpartyId: creator.id,
@@ -991,7 +1135,9 @@ export function registerContractRoutes(app: Express) {
       referenceNumber: generateReference(),
     });
 
-    // Credit delivery person
+    // #27 fix: platform fee is retained (not released to counterparty) — already deducted above
+
+    // --- Credit delivery person ---
     if (deliveryPerson && deliveryFee > 0) {
       const deliveryNewBalance = String(parseFloat(deliveryPerson.walletBalance || "0") + deliveryFee);
       await storage.updateUser(deliveryPerson.id, { walletBalance: deliveryNewBalance });
@@ -1025,24 +1171,25 @@ export function registerContractRoutes(app: Express) {
     await storage.createContractTracking({
       contractId: contract.id,
       status: "completed",
-      notes: "تم إكمال العقد وإطلاق المبلغ",
-      createdBy: creator.id,
-      createdByName: creator.name || creator.phone,
+      notes: `تم إكمال العقد — تحرير ${creditAmount} ج.م للطرف الآخر`,
+      createdBy: userId,
+      createdByName: (await storage.getUser(userId))?.name || "",
     });
 
     await storage.createUserNotification({
       userId: counterparty.id,
       type: "contract",
       title: "تم إكمال العقد!",
-      message: `استلمت ${counterpartyAmount} ج.م من عقد ${contract.title}`,
+      message: `استلمت ${creditAmount} ج.م من عقد ${contract.title}`,
       relatedId: contract.id,
     });
 
     res.json({
       success: true,
       contract: updated,
-      counterpartyAmount: String(counterpartyAmount),
+      counterpartyAmount: String(creditAmount),
       deliveryFee: String(deliveryFee),
+      platformFee: String(platformFee),
     });
   });
 

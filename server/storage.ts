@@ -1311,9 +1311,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAvailableContracts(): Promise<FlexibleContract[]> {
-    return this.db.select().from(flexibleContracts)
+    // #12 fix: only return public pending contracts for marketplace
+    const all = await this.db.select().from(flexibleContracts)
       .where(eq(flexibleContracts.status, "pending"))
       .orderBy(desc(flexibleContracts.createdAt));
+    return all.filter(c => c.isPublic === true);
   }
 
   async getAllContracts(): Promise<FlexibleContract[]> {
