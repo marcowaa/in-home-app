@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowRight, Plus, ArrowUp, Loader2, Wallet as WalletIcon } from "lucide-react";
+import { ArrowRight, Plus, ArrowUp, Loader2, Wallet as WalletIcon, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,6 +20,7 @@ export default function UserWallet() {
   const [withdrawDialog, setWithdrawDialog] = useState(false);
   const [amount, setAmount] = useState("");
   const [providerId, setProviderId] = useState("");
+  const [txSearch, setTxSearch] = useState("");
 
   const { data: walletData, isLoading } = useQuery<any>({
     queryKey: ["/api/user/wallet"],
@@ -53,7 +54,21 @@ export default function UserWallet() {
   });
 
   const providers = providersData?.providers || [];
-  const transactions = walletData?.transactions || [];
+  const allTransactions = walletData?.transactions || [];
+
+  // Filter transactions by search
+  const transactions = allTransactions.filter((tx: any) => {
+    if (!txSearch) return true;
+    const s = txSearch.toLowerCase();
+    return (
+      (tx.description || "").toLowerCase().includes(s) ||
+      (tx.type || "").toLowerCase().includes(s) ||
+      (tx.referenceNumber || "").toLowerCase().includes(s) ||
+      (tx.counterpartyName || "").toLowerCase().includes(s) ||
+      String(tx.amount || "").includes(s)
+    );
+  });
+
   const balance = parseFloat(walletData?.balance || "0");
   const frozen = parseFloat(walletData?.frozenBalance || "0");
 
@@ -96,6 +111,18 @@ export default function UserWallet() {
       {/* Transactions */}
       <div className="px-4 mt-6">
         <h2 className="font-bold text-gray-900 mb-3">سجل العمليات</h2>
+
+        {/* Search box */}
+        <div className="relative mb-3">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="ابحث في العمليات... (الوصف، النوع، المبلغ، المرجع)"
+            value={txSearch}
+            onChange={(e) => setTxSearch(e.target.value)}
+            className="h-10 pr-9"
+          />
+        </div>
+
         {isLoading ? (
           [1,2,3,4,5].map(i => <Skeleton key={i} className="h-14 w-full mb-1" />)
         ) : transactions.length > 0 ? (
