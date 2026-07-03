@@ -129,7 +129,7 @@ export function registerContractRoutes(app: Express) {
       type, counterpartyId, title, description, totalAmount,
       deliveryFeeRate, pickupAddress, deliveryAddress,
       deadlineHours, inspectionPeriodHours, terms, milestones,
-      creatorRole, isPublic, requiredFreezeRate,
+      creatorRole, isPublic, requiredFreezeRate, useAdvisor,
     } = req.body;
 
     // Validation
@@ -216,15 +216,21 @@ export function registerContractRoutes(app: Express) {
     const reqFreezeRate = parseFloat(requiredFreezeRate) || 0;
     const reqFreezeAmount = amt * reqFreezeRate;
 
+    // Advisor fee (from app settings, set by admin)
+    let advisorFee = 0;
+    if (useAdvisor) {
+      const settings = await storage.getSettings();
+      advisorFee = parseFloat((settings as any)?.advisorFee || "50");
+    }
+
     // Freeze logic:
-    // - seeker: freezes product value + platform fee from their wallet
-    // - provider: doesn't freeze (the acceptor/seeker will pay when accepting)
+    // - seeker: freezes product value + platform fee + advisor fee from their wallet
+    // - provider: only pays platform fee + advisor fee
     let frozenFromCreator = 0;
     if (role === "seeker") {
-      frozenFromCreator = amt + pFeeAmount + depositAmount;
+      frozenFromCreator = amt + pFeeAmount + depositAmount + advisorFee;
     } else {
-      // provider: only pays platform fee
-      frozenFromCreator = pFeeAmount;
+      frozenFromCreator = pFeeAmount + advisorFee;
     }
 
     if (frozenFromCreator > 0) {
@@ -275,7 +281,19 @@ export function registerContractRoutes(app: Express) {
       isPublic: isPub,
       requiredFreezeRate: String(reqFreezeRate),
       requiredFreezeAmount: String(reqFreezeAmount),
+      terms: { ...(terms || {}), useAdvisor, advisorFee: String(advisorFee) },
     });
+
+    // If advisor requested, create support ticket for advisor team
+    if (useAdvisor && advisorFee > 0) {
+      await storage.createUserNotification({
+        userId: creator.id,
+        type: "contract",
+        title: "تم طلب مستشار",
+        message: `سيتم تخصيص مستشار لعقد ${contractNumber} — رسوم ${advisorFee} ج.م`,
+        relatedId: contract.id,
+      });
+    }
 
     // Create milestones if provided (for service type)
     if (milestones && Array.isArray(milestones) && milestones.length > 0) {

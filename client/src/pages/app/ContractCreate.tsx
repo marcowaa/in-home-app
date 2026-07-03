@@ -58,6 +58,9 @@ export default function ContractCreate() {
   // Penalty for late delivery
   const [penaltyRate, setPenaltyRate] = useState("0");
 
+  // Advisor option (contract-level, commission set from admin)
+  const [useAdvisor, setUseAdvisor] = useState(false);
+
   // Step 3 - service: milestones
   const [milestones, setMilestones] = useState<{ title: string; amount: string }[]>([
     { title: "", amount: "" },
@@ -133,6 +136,7 @@ export default function ContractCreate() {
       creatorRole,
       isPublic,
       requiredFreezeRate: parseFloat(requiredFreezeRate) / 100,
+      useAdvisor,
     };
 
     if (contractType === "purchase" || contractType === "delivery") {
@@ -219,21 +223,6 @@ export default function ContractCreate() {
             >
               <h2 className="font-semibold text-gray-900 mb-1">اختر نوع العقد</h2>
               <p className="text-sm text-gray-500 mb-4">حدد نوع العقد لبدء الإنشاء</p>
-
-              {/* Advisor button */}
-              <button
-                onClick={() => navigate("/app/support?category=contract&subject=طلب مستشار لعقد")}
-                className="w-full bg-gradient-to-l from-amber-500 to-orange-500 text-white rounded-2xl p-3 flex items-center gap-3 mb-4 hover:shadow-lg transition-shadow"
-              >
-                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Headphones className="h-5 w-5" />
-                </div>
-                <div className="flex-1 text-right">
-                  <p className="font-semibold text-sm">استعن بمستشار عقود</p>
-                  <p className="text-xs text-amber-50">مستشار يصيغ لك عقداً محكماً — خدمة بمقابل مادي</p>
-                </div>
-                <ChevronLeft className="h-5 w-5 text-white" />
-              </button>
               <div className="grid grid-cols-1 gap-3">
                 {contractTypes.map((t) => {
                   const Icon = t.icon;
@@ -373,6 +362,32 @@ export default function ContractCreate() {
                   )}
                 </div>
               )}
+              {/* Advisor toggle — contract-level option with commission */}
+              <div className={`rounded-2xl border-2 p-4 transition-colors ${useAdvisor ? "border-amber-400 bg-amber-50" : "border-gray-200 bg-white"}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${useAdvisor ? "bg-amber-500" : "bg-gray-200"}`}>
+                    <Headphones className={`h-5 w-5 ${useAdvisor ? "text-white" : "text-gray-400"}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-gray-900">مستشار عقود</p>
+                    <p className="text-xs text-gray-500">
+                      {useAdvisor ? "سيتم إضافة مستشار لتصيغ العقد — مقابل عمولة" : "استعن بمستشار ليصيغ لك عقداً محكماً"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setUseAdvisor(!useAdvisor)}
+                    className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ${useAdvisor ? "bg-amber-500" : "bg-gray-300"}`}
+                  >
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useAdvisor ? "left-0.5" : "left-6"}`} />
+                  </button>
+                </div>
+                {useAdvisor && (
+                  <div className="mt-3 pt-3 border-t border-amber-200 flex items-center justify-between text-sm">
+                    <span className="text-amber-700">عمولة المستشار</span>
+                    <span className="font-bold text-amber-800">{formatPrice("50")} ج.م</span>
+                  </div>
+                )}
+              </div>
 
               {/* Public/Private toggle */}
               <div>
