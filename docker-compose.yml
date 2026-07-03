@@ -1,0 +1,85 @@
+# Anaqah Store - Docker Compose Configuration
+# متجر أناقة - إعدادات Docker Compose
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: anaqah-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anaqah} -d ${POSTGRES_DB:-anaqah_store}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Application Server
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anaqah-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5000/api/settings"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # Nginx Reverse Proxy (handles compression, caching, SSL termination)
+  nginx:
+    image: nginx:alpine
+    container_name: anaqah-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "5001:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Automated Database Backups (runs daily at 3 AM)
+  backup:
+    image: postgres:15-alpine
+    container_name: anaqah-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - backup_data:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        chmod +x /backup.sh
+        echo "Backup service started. Running backup every 24h..."
+        /backup.sh
+        while true; do sleep 86400; /backup.sh; done
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+  backup_data:
+    driver: local
+
+networks:
+  default:
+    name: anaqah-network

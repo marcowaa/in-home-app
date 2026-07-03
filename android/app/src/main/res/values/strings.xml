@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">نظام المندوبين</string>
+    <string name="title_activity_main">نظام المندوبين</string>
+    <string name="package_name">com.mandoobeen.app</string>
+    <string name="custom_url_scheme">com.mandoobeen.app</string>
+</resources>
