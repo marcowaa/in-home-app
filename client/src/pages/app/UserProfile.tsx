@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   ArrowRight, User, Phone, Shield, LogOut, Copy, Check,
-  Gift, Bell, Settings, ChevronLeft, BadgeCheck, LifeBuoy
+  Gift, Bell, Settings, ChevronLeft, BadgeCheck, LifeBuoy, Star
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,12 @@ export default function UserProfile() {
   });
   const { data: walletData } = useQuery<any>({
     queryKey: ["/api/user/wallet"],
+  });
+
+  // Fetch user's public ratings
+  const { data: ratingsData } = useQuery<any>({
+    queryKey: [`/api/public/users/${authData?.user?.id}/ratings`],
+    enabled: !!authData?.user?.id,
   });
 
   const logoutMutation = useMutation({
@@ -58,13 +64,43 @@ export default function UserProfile() {
           </div>
           <h1 className="text-xl font-bold">{user?.name || "مستخدم"}</h1>
           <p className="text-blue-100 text-sm">{user?.phone}</p>
-          <div className="mt-2">
+          <div className="mt-2 flex items-center gap-2 justify-center">
             <span className={`text-xs px-3 py-1 rounded-full ${kyc.color}`}>{kyc.label}</span>
+            {ratingsData && ratingsData.totalReviews > 0 && (
+              <span className="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full flex items-center gap-1">
+                <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
+                {ratingsData.avgRating} ({ratingsData.totalReviews})
+              </span>
+            )}
           </div>
         </div>
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Ratings summary */}
+        {ratingsData && ratingsData.totalReviews > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm flex items-center gap-1">
+                <Star className="h-4 w-4 text-yellow-500" /> التقييمات
+              </h3>
+              <span className="text-2xl font-bold text-yellow-600">{ratingsData.avgRating}</span>
+            </div>
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {ratingsData.ratings.slice(0, 3).map((r: any, i: number) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <div className="flex flex-shrink-0">
+                    {[1,2,3,4,5].map(s => (
+                      <Star key={s} className={`h-3 w-3 ${s <= r.rating ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+                    ))}
+                  </div>
+                  <p className="text-gray-500 line-clamp-1">{r.comment || "—"}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Balance Summary */}
         <div className="bg-white rounded-2xl shadow-sm p-4">
           <div className="grid grid-cols-2 gap-4 text-center">

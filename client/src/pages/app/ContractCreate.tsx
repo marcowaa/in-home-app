@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Loader2, Check, Search, Plus, Trash2,
   ShoppingCart, Wrench, Home, FileText, Boxes,
-  Calendar, Shield, User, Truck, Headphones, Clock, ChevronLeft,
+  Calendar, Shield, User, Truck, Headphones, Clock, ChevronLeft, MapPin, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,15 @@ export default function ContractCreate() {
   // Flexible duration (for inspection period, rental period, deadline)
   const [durationUnit, setDurationUnit] = useState<"minutes" | "hours" | "days" | "months">("hours");
   const [durationValue, setDurationValue] = useState(24);
+
+  // Date selection: "immediate" | "single" | "range"
+  const [dateMode, setDateMode] = useState<"immediate" | "single" | "range">("immediate");
+  const [singleDate, setSingleDate] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Penalty for late delivery
+  const [penaltyRate, setPenaltyRate] = useState("0");
 
   // Step 3 - service: milestones
   const [milestones, setMilestones] = useState<{ title: string; amount: string }[]>([
@@ -130,7 +139,15 @@ export default function ContractCreate() {
       payload.deliveryFeeRate = parseFloat(deliveryFeeRate) / 100;
       payload.pickupAddress = pickupAddress;
       payload.deliveryAddress = deliveryAddress;
-      payload.terms = { inspectionPeriodHours: durationValue, inspectionPeriodUnit: durationUnit };
+      payload.terms = {
+        inspectionPeriodHours: durationValue,
+        inspectionPeriodUnit: durationUnit,
+        dateMode,
+        singleDate: singleDate || undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        penaltyRate: parseFloat(penaltyRate) / 100,
+      };
     } else if (contractType === "service") {
       payload.milestones = milestones.filter((m) => m.title && m.amount);
     } else if (contractType === "rental") {
@@ -493,10 +510,10 @@ export default function ContractCreate() {
                 </>
               )}
 
-              {/* Purchase: Addresses + Inspection */}
+              {/* Purchase/Delivery: Addresses + Duration + Dates + Penalty + Map */}
               {(contractType === "purchase" || contractType === "delivery") && (
                 <>
-                  <h2 className="font-semibold text-gray-900">العناوين والفحص</h2>
+                  <h2 className="font-semibold text-gray-900">العناوين</h2>
                   <div>
                     <label className="text-sm font-medium mb-1 block">عنوان الاستلام</label>
                     <SuggestionInput
@@ -519,11 +536,29 @@ export default function ContractCreate() {
                       className="h-12"
                     />
                   </div>
+
+                  {/* Temporary Map placeholder */}
+                  <div className="relative h-32 rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
+                      <div className="text-center">
+                        <MapPin className="h-8 w-8 text-blue-400 mx-auto mb-1" />
+                        <p className="text-xs text-gray-400">خريطة المواقع — قريباً</p>
+                        <div className="flex items-center gap-1 justify-center mt-1">
+                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                          <span className="text-[10px] text-gray-400">استلام</span>
+                          <span className="text-[10px] text-gray-300 mx-1">→</span>
+                          <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                          <span className="text-[10px] text-gray-400">تسليم</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contract Duration (renamed from inspection) */}
                   <div>
                     <label className="text-sm font-medium mb-2 block flex items-center gap-1">
-                      <Clock className="h-4 w-4 text-blue-600" /> مدة الفحص
+                      <Clock className="h-4 w-4 text-blue-600" /> مدة العقد
                     </label>
-                    {/* Unit selector */}
                     <div className="grid grid-cols-4 gap-1.5 mb-3">
                       {[
                         { v: "minutes", l: "دقائق" },
@@ -540,7 +575,6 @@ export default function ContractCreate() {
                         </button>
                       ))}
                     </div>
-                    {/* Slider */}
                     <div className="bg-blue-50 rounded-xl p-3">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs text-gray-500">المدة</span>
@@ -558,13 +592,71 @@ export default function ContractCreate() {
                         className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                       />
                       <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                        <span>
-                          {durationUnit === "minutes" ? 5 : durationUnit === "hours" ? 1 : 1} {durationUnit === "minutes" ? "د" : durationUnit === "hours" ? "س" : "ي"}
-                        </span>
-                        <span>
-                          {durationUnit === "minutes" ? 120 : durationUnit === "hours" ? 72 : durationUnit === "days" ? 90 : 12}
-                        </span>
+                        <span>{durationUnit === "minutes" ? 5 : 1}</span>
+                        <span>{durationUnit === "minutes" ? 120 : durationUnit === "hours" ? 72 : durationUnit === "days" ? 90 : 12}</span>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Date selection mode */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">تاريخ التنفيذ</label>
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {[
+                        { v: "immediate", l: "فوري" },
+                        { v: "single", l: "تاريخ محدد" },
+                        { v: "range", l: "من - إلى" },
+                      ].map((d) => (
+                        <button
+                          key={d.v}
+                          onClick={() => setDateMode(d.v as any)}
+                          className={`py-2 rounded-lg text-xs font-medium ${dateMode === d.v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"}`}
+                        >
+                          {d.l}
+                        </button>
+                      ))}
+                    </div>
+                    {dateMode === "single" && (
+                      <Input type="date" value={singleDate} onChange={(e) => setSingleDate(e.target.value)} className="h-12" />
+                    )}
+                    {dateMode === "range" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">من</label>
+                          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-12" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">إلى</label>
+                          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-12" />
+                        </div>
+                      </div>
+                    )}
+                    {dateMode === "immediate" && (
+                      <p className="text-xs text-blue-500">سيبدأ العقد فور قبول الطرف الآخر</p>
+                    )}
+                  </div>
+
+                  {/* Late delivery penalty */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block flex items-center gap-1">
+                      <AlertTriangle className="h-4 w-4 text-orange-500" /> عقوبة التأخير
+                    </label>
+                    <p className="text-xs text-gray-400 mb-2">نسبة تُخصم من الطرف الآخر عند التأخير عن التنفيذ</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { v: "0", l: "بدون" },
+                        { v: "5", l: "5%" },
+                        { v: "10", l: "10%" },
+                        { v: "20", l: "20%" },
+                      ].map((p) => (
+                        <button
+                          key={p.v}
+                          onClick={() => setPenaltyRate(p.v)}
+                          className={`py-2 rounded-lg text-xs font-medium ${penaltyRate === p.v ? "bg-orange-500 text-white" : "bg-gray-100 text-gray-600"}`}
+                        >
+                          {p.l}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </>

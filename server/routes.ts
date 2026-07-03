@@ -11,7 +11,10 @@ import {
   insertPaymentMethodSchema,
   insertOrderSchema,
   insertAppSettingsSchema,
+  p2pTransfers,
+  contractReviews,
 } from "@shared/schema";
+import { eq, desc, sql } from "drizzle-orm";
 import { requireApiKey, generateApiKey, generateSecretKey, API_PERMISSIONS, PERMISSION_LABELS } from "./apiMiddleware";
 import { triggerWebhook, WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS } from "./webhooks";
 import connectPgSimple from "connect-pg-simple";
@@ -3343,4 +3346,29 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   });
 
   // Contract rules endpoint is in contractRoutes.ts (before /:id route)
+
+  // ================================================================
+  // PUBLIC: USER RATINGS (for public profile display)
+  // ================================================================
+
+  app.get("/api/public/users/:id/ratings", async (req: Request, res: Response) => {
+    const userId = req.params.id;
+    const reviews = await db.select().from(contractReviews)
+      .where(eq(contractReviews.reviewedId, userId))
+      .orderBy(desc(contractReviews.createdAt));
+
+    const ratings = reviews.map(r => ({
+      rating: parseFloat(r.rating || "0"),
+      comment: r.comment,
+      reviewerRole: r.reviewedRole,
+      contractId: r.contractId,
+      createdAt: r.createdAt,
+    }));
+
+    const avgRating = ratings.length > 0
+      ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length
+      : 0;
+
+    res.json({ ratings, avgRating: Math.round(avgRating * 10) / 10, totalReviews: ratings.length });
+  });
 }
