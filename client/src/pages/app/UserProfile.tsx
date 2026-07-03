@@ -163,7 +163,7 @@ export default function UserProfile() {
             <span className="text-sm font-medium flex-1 text-right">الإشعارات</span>
             <ChevronLeft className="h-4 w-4 text-gray-300" />
           </button>
-          <button className="w-full flex items-center gap-3 p-4 hover:bg-gray-50">
+          <button onClick={() => navigate("/app/settings")} className="w-full flex items-center gap-3 p-4 hover:bg-gray-50">
             <Settings className="h-5 w-5 text-gray-400" />
             <span className="text-sm font-medium flex-1 text-right">الإعدادات</span>
             <ChevronLeft className="h-4 w-4 text-gray-300" />

@@ -43,6 +43,7 @@ import Beneficiaries from "@/pages/app/Beneficiaries";
 import QRScanner from "@/pages/app/QRScanner";
 import SupportTickets from "@/pages/app/SupportTickets";
 import SupportTicketDetails from "@/pages/app/SupportTicketDetails";
+import UserSettings from "@/pages/app/UserSettings";
 import Marketplace from "@/pages/app/Marketplace";
 import KYCVerification from "@/pages/app/KYCVerification";
 
@@ -80,6 +81,7 @@ function Router() {
       <Route path="/app/scan" component={withLayout(QRScanner)} />
       <Route path="/app/support" component={withLayout(SupportTickets)} />
       <Route path="/app/support/:id" component={withLayout(SupportTicketDetails)} />
+      <Route path="/app/settings" component={withLayout(UserSettings)} />
       <Route path="/app/kyc" component={withLayout(KYCVerification)} />
 
       {/* Driver Routes */}
