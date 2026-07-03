@@ -33,6 +33,7 @@ export default function ContractCreate() {
 
   const [step, setStep] = useState(1);
   const [contractType, setContractType] = useState<ContractType | "">("");
+  const [typeSearch, setTypeSearch] = useState("");
 
   // Step 2 fields
   const [title, setTitle] = useState("");
@@ -223,8 +224,24 @@ export default function ContractCreate() {
             >
               <h2 className="font-semibold text-gray-900 mb-1">اختر نوع العقد</h2>
               <p className="text-sm text-gray-500 mb-4">حدد نوع العقد لبدء الإنشاء</p>
+
+              {/* Search box */}
+              <div className="relative mb-4">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="ابحث عن نوع العقد..."
+                  value={typeSearch}
+                  onChange={(e) => setTypeSearch(e.target.value)}
+                  className="h-10 pr-9"
+                />
+              </div>
+
               <div className="grid grid-cols-1 gap-3">
-                {contractTypes.map((t) => {
+                {contractTypes.filter((t) => {
+                  if (!typeSearch) return true;
+                  const s = typeSearch.toLowerCase();
+                  return t.label.toLowerCase().includes(s) || t.desc.toLowerCase().includes(s) || t.key.toLowerCase().includes(s);
+                }).map((t) => {
                   const Icon = t.icon;
                   return (
                     <button
@@ -258,6 +275,23 @@ export default function ContractCreate() {
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Add custom contract type */}
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <button
+                  onClick={() => { setContractType("custom"); setStep(2); }}
+                  className="w-full bg-gradient-to-l from-indigo-500 to-purple-600 text-white rounded-2xl p-4 flex items-center gap-3 hover:shadow-lg transition-shadow"
+                >
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <div className="flex-1 text-right">
+                    <p className="font-semibold">إضافة عقد غير موجود</p>
+                    <p className="text-xs text-indigo-100">أنشئ عقداً مخصصاً بشروطك الخاصة</p>
+                  </div>
+                  <ChevronLeft className="h-5 w-5 text-white" />
+                </button>
               </div>
             </motion.div>
           )}
