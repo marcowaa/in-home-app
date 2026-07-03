@@ -245,6 +245,22 @@ export const appSettings = pgTable("app_settings", {
   driverCommissionVerifiedId: decimal("driver_commission_verified_id", { precision: 5, scale: 2 }).default("8"),
   driverCommissionVerifiedCriminal: decimal("driver_commission_verified_criminal", { precision: 5, scale: 2 }).default("12"),
   referralBonusAmount: decimal("referral_bonus_amount", { precision: 10, scale: 2 }).default("50"),
+  // Security & fraud protection
+  fraudCode: text("fraud_code").default("AB12"),
+  otpMessageTemplate: text("otp_message_template").default("كود التحقق: {OTP} | رمز الحماية: {FRAUD_CODE}"),
+  // Transfer limits
+  maxDailyTransfers: integer("max_daily_transfers").default(10),
+  maxTransferAmount: decimal("max_transfer_amount", { precision: 12, scale: 2 }).default("50000"),
+  minTransferAmount: decimal("min_transfer_amount", { precision: 12, scale: 2 }).default("1"),
+  transferFeeRate: decimal("transfer_fee_rate", { precision: 5, scale: 4 }).default("0.005"),
+  transferFeeFixed: decimal("transfer_fee_fixed", { precision: 12, scale: 2 }).default("2"),
+  // Advisor settings
+  advisorFeeRate: decimal("advisor_fee_rate", { precision: 5, scale: 4 }).default("0.05"),
+  advisorConsultationFee: decimal("advisor_consultation_fee", { precision: 12, scale: 2 }).default("25"),
+  // Contract automation
+  contractAutoCompleteHours: integer("contract_auto_complete_hours").default(48),
+  disputeTimeoutHours: integer("dispute_timeout_hours").default(168),
+  maxActiveContracts: integer("max_active_contracts").default(20),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

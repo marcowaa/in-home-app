@@ -22,6 +22,7 @@ import {
   FileText,
   ChevronDown,
   Search,
+  Headset,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,11 +40,15 @@ interface AdminLayoutProps {
 
 const menuItems = [
   { href: "/admin/dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
+  { href: "/admin/contracts", label: "العقود", icon: FileText },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingCart },
   { href: "/admin/drivers", label: "المندوبين", icon: Truck },
-  { href: "/admin/notifications", label: "الإشعارات", icon: Bell },
-  { href: "/admin/operations-log", label: "سجل العمليات", icon: FileText },
+  { href: "/admin/users", label: "المستخدمون", icon: UserPlus },
+  { href: "/admin/disputes", label: "النزاعات", icon: AlertCircle },
+  { href: "/admin/support", label: "الدعم الفني", icon: Headset },
+  { href: "/admin/payments", label: "التقارير المالية", icon: ArrowDownCircle },
   { href: "/admin/payment-methods", label: "وسائل الدفع", icon: CreditCard },
+  { href: "/admin/notifications", label: "الإشعارات", icon: Bell },
   { href: "/admin/integrations", label: "التكاملات و API", icon: Plug },
   { href: "/admin/settings", label: "الإعدادات", icon: Settings },
   { href: "/admin/change-password", label: "تغيير كلمة المرور", icon: KeyRound },
@@ -269,8 +274,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   );
 
   // Split menu: first 5 items visible, rest in "more" dropdown
-  const visibleItems = menuItems.slice(0, 5);
-  const moreItems = menuItems.slice(5);
+  const visibleItems = menuItems.slice(0, 7);
+  const moreItems = menuItems.slice(7);
 
   const navbarStyle = settings?.adminSidebarBackground
     ? {
