@@ -34,6 +34,9 @@ export default function ContractCreate() {
   const [step, setStep] = useState(1);
   const [contractType, setContractType] = useState<ContractType | "">("");
   const [typeSearch, setTypeSearch] = useState("");
+  const [showTypeRequest, setShowTypeRequest] = useState(false);
+  const [newTypeName, setNewTypeName] = useState("");
+  const [newTypeDesc, setNewTypeDesc] = useState("");
 
   // Step 2 fields
   const [title, setTitle] = useState("");
@@ -109,6 +112,17 @@ export default function ContractCreate() {
       setStep(5);
     },
     onError: () => toast({ title: "فشل إنشاء العقد", variant: "destructive" }),
+  });
+
+  const typeRequestMutation = useMutation({
+    mutationFn: (data: { name: string; description: string }) => apiRequest("POST", "/api/user/contract-type-request", data),
+    onSuccess: () => {
+      toast({ title: "تم إرسال طلبك", description: "سيتم مراجعته من الأدمن وإضافته عند الموافقة" });
+      setShowTypeRequest(false);
+      setNewTypeName("");
+      setNewTypeDesc("");
+    },
+    onError: () => toast({ title: "فشل إرسال الطلب", variant: "destructive" }),
   });
 
   const numericAmount = parseFloat(amount) || 0;
@@ -280,19 +294,56 @@ export default function ContractCreate() {
               {/* Add custom contract type */}
               <div className="border-t border-gray-100 pt-4 mt-4">
                 <button
-                  onClick={() => { setContractType("custom"); setStep(2); }}
+                  onClick={() => setShowTypeRequest(true)}
                   className="w-full bg-gradient-to-l from-indigo-500 to-purple-600 text-white rounded-2xl p-4 flex items-center gap-3 hover:shadow-lg transition-shadow"
                 >
                   <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
                     <Plus className="h-6 w-6" />
                   </div>
                   <div className="flex-1 text-right">
-                    <p className="font-semibold">إضافة عقد غير موجود</p>
-                    <p className="text-xs text-indigo-100">أنشئ عقداً مخصصاً بشروطك الخاصة</p>
+                    <p className="font-semibold">إضافة نوع عقد غير موجود</p>
+                    <p className="text-xs text-indigo-100">اطلب إدراج نوع عقد جديد — يراجعه الأدمن</p>
                   </div>
                   <ChevronLeft className="h-5 w-5 text-white" />
                 </button>
               </div>
+
+              {/* Type request modal */}
+              {showTypeRequest && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowTypeRequest(false)}>
+                  <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+                    <h3 className="font-bold text-gray-900 mb-1">طلب نوع عقد جديد</h3>
+                    <p className="text-xs text-gray-500 mb-4">سيتم مراجعة طلبك من الأدمن وإضافته للقائمة عند الموافقة</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">اسم نوع العقد</label>
+                        <Input
+                          placeholder="مثال: عقد استثمار"
+                          value={newTypeName}
+                          onChange={(e) => setNewTypeName(e.target.value)}
+                          className="h-12"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">الوصف (اختياري)</label>
+                        <Textarea
+                          placeholder="اشرح هذا النوع باختصار..."
+                          value={newTypeDesc}
+                          onChange={(e) => setNewTypeDesc(e.target.value)}
+                          className="min-h-[80px]"
+                        />
+                      </div>
+                      <Button
+                        className="w-full h-12"
+                        disabled={!newTypeName.trim() || typeRequestMutation.isPending}
+                        onClick={() => typeRequestMutation.mutate({ name: newTypeName, description: newTypeDesc })}
+                      >
+                        {typeRequestMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "إرسال الطلب"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
 

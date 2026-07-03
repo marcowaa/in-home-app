@@ -3292,6 +3292,66 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   });
 
   // ================================================================
+  // USER: REQUEST NEW CONTRACT TYPE
+  // ================================================================
+
+  app.post("/api/user/contract-type-request", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const { name, description } = req.body;
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({ message: "اسم نوع العقد مطلوب" });
+    }
+    const user = await storage.getUser(req.session.userId);
+    const result = await db.execute(sql`INSERT INTO contract_type_requests (name, description, requested_by, requested_by_name, status) VALUES (${name.trim()}, ${description || null}, ${req.session.userId}, ${user?.name || user?.phone || ''}, 'pending') RETURNING *`);
+    res.json({ success: true, request: result.rows[0] });
+  });
+
+  app.get("/api/user/contract-type-requests", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const result = await db.execute(sql`SELECT * FROM contract_type_requests WHERE requested_by = ${req.session.userId} ORDER BY created_at DESC`);
+    res.json({ requests: result.rows });
+  });
+
+  // ================================================================
+  // ADMIN: MANAGE CONTRACT TYPE REQUESTS
+  // ================================================================
+
+  app.get("/api/admin/contract-type-requests", requireAdmin, async (req: Request, res: Response) => {
+    const result = await db.execute(sql`SELECT * FROM contract_type_requests ORDER BY created_at DESC`);
+    res.json({ requests: result.rows });
+  });
+
+  app.post("/api/admin/contract-type-requests/:id/approve", requireAdmin, async (req: Request, res: Response) => {
+    const result = await db.execute(sql`UPDATE contract_type_requests SET status = 'approved', reviewed_by = ${req.session.userId || ''}, reviewed_at = NOW() WHERE id = ${req.params.id} RETURNING *`);
+    if (result.rows.length === 0) return res.status(404).json({ message: "الطلب غير موجود" });
+    const reqData = result.rows[0];
+    // Create a new contract template from the approved name
+    await storage.createContractTemplate({
+      name: reqData.name,
+      nameEn: null,
+      type: "custom",
+      description: reqData.description || null,
+      defaultTerms: null,
+      defaultFeeRate: "0.005",
+      icon: null,
+      isActive: true,
+      sortOrder: 99,
+    });
+    res.json({ success: true, request: reqData });
+  });
+
+  app.post("/api/admin/contract-type-requests/:id/reject", requireAdmin, async (req: Request, res: Response) => {
+    const { reason } = req.body;
+    const result = await db.execute(sql`UPDATE contract_type_requests SET status = 'rejected', reviewed_by = ${req.session.userId || ''}, reviewed_at = NOW(), rejection_reason = ${reason || null} WHERE id = ${req.params.id} RETURNING *`);
+    if (result.rows.length === 0) return res.status(404).json({ message: "الطلب غير موجود" });
+    res.json({ success: true, request: result.rows[0] });
+  });
+
+  // ================================================================
   // USER: FRAUD CODE (personal anti-phishing code)
   // ================================================================
 
