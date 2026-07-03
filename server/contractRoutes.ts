@@ -220,7 +220,7 @@ export function registerContractRoutes(app: Express) {
     let advisorFee = 0;
     if (useAdvisor) {
       const settings = await storage.getSettings();
-      advisorFee = parseFloat((settings as any)?.advisorFee || "50");
+      advisorFee = amt * (parseFloat((settings as any)?.advisorFeeRate || "0.05"));
     }
 
     // Freeze logic:
@@ -1569,6 +1569,119 @@ export function registerContractRoutes(app: Express) {
       newExtensionCount: currentExtensions + 1,
       contract: updated,
     });
+  });
+
+  // ===== ADVISOR: GET ASSIGNED CONTRACTS =====
+
+  app.get("/api/user/advisor/contracts", async (req: Request, res: Response) => {
+    if (!req.session?.adminLoggedIn && !req.session?.proAdminLoggedIn) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const all = await storage.getAllContracts();
+    const advisorContracts = all.filter((c: any) => c.terms && (c.terms as any).useAdvisor === true && c.advisorStatus !== "completed");
+    res.json({ contracts: advisorContracts });
+  });
+
+  // ===== ADVISOR: GET MESSAGES =====
+
+  app.get("/api/user/advisor/contracts/:id/messages", async (req: Request, res: Response) => {
+    if (!req.session?.adminLoggedIn && !req.session?.proAdminLoggedIn) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const result = await db.execute(sql`SELECT * FROM advisor_messages WHERE contract_id = ${req.params.id} ORDER BY created_at`);
+    res.json({ messages: result.rows });
+  });
+
+  // ===== ADVISOR: SEND MESSAGE (ask user or respond) =====
+
+  app.post("/api/user/advisor/contracts/:id/messages", async (req: Request, res: Response) => {
+    if (!req.session?.adminLoggedIn && !req.session?.proAdminLoggedIn) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ message: "الرسالة مطلوبة" });
+
+    const result = await db.execute(sql`INSERT INTO advisor_messages (contract_id, sender_id, sender_role, message) VALUES (${req.params.id}, ${req.session.userId || "advisor"}, 'advisor', ${message}) RETURNING *`);
+    const msg = result.rows[0];
+
+    // Notify the contract creator
+    const contract = await storage.getContract(req.params.id);
+    if (contract) {
+      await storage.createUserNotification({
+        userId: contract.creatorId,
+        type: "contract",
+        title: "رسالة من المستشار",
+        message: message,
+        relatedId: contract.id,
+      });
+    }
+
+    res.json({ success: true, message: msg });
+  });
+
+  // ===== ADVISOR: EDIT CONTRACT TITLE & DESCRIPTION =====
+
+  app.post("/api/user/advisor/contracts/:id/edit", async (req: Request, res: Response) => {
+    if (!req.session?.adminLoggedIn && !req.session?.proAdminLoggedIn) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const { title, description } = req.body;
+    const contract = await storage.getContract(req.params.id);
+    if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
+
+    const updates: any = { advisorStatus: "edited", advisorId: req.session.userId || "advisor" };
+    if (title) updates.title = title;
+    if (description) updates.description = description;
+    if (req.body.advisorNotes) updates.advisorNotes = req.body.advisorNotes;
+
+    const updated = await storage.updateContract(contract.id, updates);
+
+    // Notify creator
+    await storage.createUserNotification({
+      userId: contract.creatorId,
+      type: "contract",
+      title: "عدّل المستشار عقدك",
+      message: `قام المستشار بتعديل العقد — راجعه قبل المتابعة`,
+      relatedId: contract.id,
+    });
+
+    res.json({ success: true, contract: updated });
+  });
+
+  // ===== USER: SEND MESSAGE TO ADVISOR =====
+
+  app.post("/api/user/contracts/:id/advisor-message", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const contract = await storage.getContract(req.params.id);
+    if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
+    if (contract.creatorId !== req.session.userId) {
+      return res.status(403).json({ message: "غير مصرح" });
+    }
+
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ message: "الرسالة مطلوبة" });
+
+    const result = await db.execute(sql`INSERT INTO advisor_messages (contract_id, sender_id, sender_role, message) VALUES (${req.params.id}, ${req.session.userId}, 'user', ${message}) RETURNING *`);
+
+    res.json({ success: true, message: result.rows[0] });
+  });
+
+  // ===== USER: GET ADVISOR MESSAGES =====
+
+  app.get("/api/user/contracts/:id/advisor-messages", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const contract = await storage.getContract(req.params.id);
+    if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
+    if (contract.creatorId !== req.session.userId) {
+      return res.status(403).json({ message: "غير مصرح" });
+    }
+
+    const result = await db.execute(sql`SELECT * FROM advisor_messages WHERE contract_id = ${req.params.id} ORDER BY created_at`);
+    res.json({ messages: result.rows });
   });
 
   // ===== REVIEW =====

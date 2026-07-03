@@ -381,10 +381,10 @@ export default function ContractCreate() {
                     <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useAdvisor ? "left-0.5" : "left-6"}`} />
                   </button>
                 </div>
-                {useAdvisor && (
+                {useAdvisor && numericAmount > 0 && (
                   <div className="mt-3 pt-3 border-t border-amber-200 flex items-center justify-between text-sm">
-                    <span className="text-amber-700">عمولة المستشار</span>
-                    <span className="font-bold text-amber-800">{formatPrice("50")} ج.م</span>
+                    <span className="text-amber-700">عمولة المستشار (5%)</span>
+                    <span className="font-bold text-amber-800">{formatPrice(String(numericAmount * 0.05))} ج.م</span>
                   </div>
                 )}
               </div>
