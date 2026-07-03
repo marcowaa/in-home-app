@@ -94,14 +94,17 @@ export function registerUserRoutes(app: Express) {
     // Mock OTP: always return 1234 for demo
     const otp = "1234";
 
-    // Build message with fraud protection code from settings
+    // Build message with user's personal fraud protection code (fallback to admin default)
     const settings = await storage.getSettings();
-    const fraudCode = (settings as any)?.fraudCode || "AB12";
+    let user = await storage.getUserByPhone(phone);
+    const userFraudCode = (user as any)?.fraudCode || null;
+    const adminFraudCode = (settings as any)?.fraudCode || "AB12";
+    const fraudCode = userFraudCode || adminFraudCode;
     const template = (settings as any)?.otpMessageTemplate || "كود التحقق: {OTP} | رمز الحماية: {FRAUD_CODE}";
     const fullMessage = template.replace("{OTP}", otp).replace("{FRAUD_CODE}", fraudCode);
 
     // In production, send SMS with fullMessage here
-    res.json({ sent: true, otp, message: fullMessage, fraudCode });
+    res.json({ sent: true, otp, message: fullMessage, fraudCode, isPersonal: !!userFraudCode });
   });
 
   // Verify OTP + login/register

@@ -13,6 +13,7 @@ import {
   insertAppSettingsSchema,
   p2pTransfers,
   contractReviews,
+  users,
 } from "@shared/schema";
 import { eq, desc, sql } from "drizzle-orm";
 import { requireApiKey, generateApiKey, generateSecretKey, API_PERMISSIONS, PERMISSION_LABELS } from "./apiMiddleware";
@@ -3288,6 +3289,31 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   app.delete("/api/admin/contract-templates/:id", requireAdmin, async (req: Request, res: Response) => {
     await storage.deleteContractTemplate(req.params.id);
     res.json({ success: true });
+  });
+
+  // ================================================================
+  // USER: FRAUD CODE (personal anti-phishing code)
+  // ================================================================
+
+  app.get("/api/user/fraud-code", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const user = await storage.getUser(req.session.userId);
+    const userFraudCode = (user as any)?.fraudCode || null;
+    res.json({ fraudCode: userFraudCode });
+  });
+
+  app.post("/api/user/fraud-code", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const { fraudCode } = req.body;
+    if (!fraudCode || fraudCode.length !== 4 || !/^[A-Z0-9]{4}$/.test(fraudCode)) {
+      return res.status(400).json({ message: "الرمز يجب أن يكون 4 خانات (أحرف إنجليزية وأرقام)" });
+    }
+    await db.update(users).set({ fraudCode } as any).where(eq(users.id, req.session.userId));
+    res.json({ success: true, fraudCode });
   });
 
   // ================================================================
