@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowRight, Plus, ArrowUp, Loader2, Wallet as WalletIcon, Search } from "lucide-react";
+import { ArrowRight, Plus, ArrowUp, Loader2, CreditCard, Search, Trash2, Star, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, cn } from "@/lib/utils";
 import TransactionItem from "@/components/app/TransactionItem";
 
 export default function UserWallet() {
@@ -18,9 +17,15 @@ export default function UserWallet() {
   const { toast } = useToast();
   const [topupDialog, setTopupDialog] = useState(false);
   const [withdrawDialog, setWithdrawDialog] = useState(false);
+  const [addCardDialog, setAddCardDialog] = useState(false);
   const [amount, setAmount] = useState("");
   const [providerId, setProviderId] = useState("");
   const [txSearch, setTxSearch] = useState("");
+
+  // Card form
+  const [cardName, setCardName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardBrand, setCardBrand] = useState("visa");
 
   const { data: walletData, isLoading } = useQuery<any>({
     queryKey: ["/api/user/wallet"],
@@ -28,6 +33,9 @@ export default function UserWallet() {
   const { data: providersData } = useQuery<any>({
     queryKey: ["/api/user/wallet/providers"],
     enabled: topupDialog || withdrawDialog,
+  });
+  const { data: cardsData } = useQuery<any>({
+    queryKey: ["/api/user/cards"],
   });
 
   const topupMutation = useMutation({
@@ -53,10 +61,38 @@ export default function UserWallet() {
     onError: () => toast({ title: "فشل السحب", variant: "destructive" }),
   });
 
+  const addCardMutation = useMutation({
+    mutationFn: (data: { cardName: string; last4: string; brand: string }) => apiRequest("POST", "/api/user/cards", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user/cards"] });
+      toast({ title: "تم ربط البطاقة" });
+      setAddCardDialog(false); setCardName(""); setCardNumber("");
+    },
+    onError: () => toast({ title: "فشل ربط البطاقة", variant: "destructive" }),
+  });
+
+  const setPrimaryMutation = useMutation({
+    mutationFn: (cardId: string) => apiRequest("POST", `/api/user/cards/${cardId}/primary`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user/cards"] });
+      toast({ title: "تم تعيين البطاقة الرئيسية" });
+    },
+  });
+
+  const deleteCardMutation = useMutation({
+    mutationFn: (cardId: string) => apiRequest("DELETE", `/api/user/cards/${cardId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user/cards"] });
+      toast({ title: "تم حذف البطاقة" });
+    },
+  });
+
   const providers = providersData?.providers || [];
   const allTransactions = walletData?.transactions || [];
+  const cards = cardsData?.cards || [];
+  const balance = parseFloat(walletData?.balance || "0");
+  const frozen = parseFloat(walletData?.frozenBalance || "0");
 
-  // Filter transactions by search
   const transactions = allTransactions.filter((tx: any) => {
     if (!txSearch) return true;
     const s = txSearch.toLowerCase();
@@ -69,8 +105,19 @@ export default function UserWallet() {
     );
   });
 
-  const balance = parseFloat(walletData?.balance || "0");
-  const frozen = parseFloat(walletData?.frozenBalance || "0");
+  const handleAddCard = () => {
+    if (!cardName || cardNumber.length < 4) return;
+    const last4 = cardNumber.replace(/\s/g, "").slice(-4);
+    addCardMutation.mutate({ cardName, last4, brand: cardBrand });
+  };
+
+  const cardColors = [
+    "from-blue-600 to-purple-700",
+    "from-green-600 to-teal-700",
+    "from-orange-500 to-red-600",
+    "from-gray-700 to-gray-900",
+    "from-indigo-600 to-pink-600",
+  ];
 
   return (
     <div dir="rtl" className="min-h-screen">
@@ -79,22 +126,85 @@ export default function UserWallet() {
         <h1 className="font-bold text-gray-900">محفظتي</h1>
       </div>
 
-      {/* Balance Card */}
-      <div className="bg-gradient-to-br from-blue-600 to-purple-700 text-white p-5 m-4 rounded-2xl">
-        <div className="flex items-center gap-2 mb-2">
-          <WalletIcon className="h-5 w-5" />
-          <p className="text-blue-100 text-sm">الرصيد المتاح</p>
+      {/* Bank Cards Section */}
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-gray-900 text-sm">بطاقاتي</h2>
+          <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setAddCardDialog(true)}>
+            <Plus className="h-4 w-4" /> ربط بطاقة
+          </Button>
         </div>
-        <p className="text-3xl font-bold">{formatPrice(String(balance - frozen))} <span className="text-base font-normal">ج.م</span></p>
-        {frozen > 0 && (
-          <div className="mt-3 pt-3 border-t border-white/20 flex justify-between text-sm">
-            <span className="text-blue-100">الرصيد المجمد</span>
-            <span className="font-medium">{formatPrice(String(frozen))} ج.م</span>
+
+        {/* Cards carousel */}
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 snap-x">
+          {/* Main wallet card */}
+          <div className="snap-start flex-shrink-0 w-[300px] bg-gradient-to-br from-blue-600 to-purple-700 text-white rounded-2xl p-4 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                <span className="text-sm font-medium">المحفظة</span>
+              </div>
+              <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full">رئيسية</span>
+            </div>
+            <p className="text-xs text-blue-100 mb-1">الرصيد المتاح</p>
+            <p className="text-2xl font-bold mb-3">{formatPrice(String(balance - frozen))} <span className="text-sm">ج.م</span></p>
+            {frozen > 0 && (
+              <div className="pt-2 border-t border-white/20 flex justify-between text-xs">
+                <span className="text-blue-100">مجمّد</span>
+                <span>{formatPrice(String(frozen))} ج.م</span>
+              </div>
+            )}
+            <div className="mt-3 flex gap-1.5">
+              <div className="w-8 h-5 bg-yellow-400/80 rounded-sm" />
+              <div className="w-8 h-5 bg-red-500/80 rounded-sm" />
+            </div>
           </div>
-        )}
-        <div className="mt-3 pt-3 border-t border-white/20 flex justify-between text-sm">
-          <span className="text-blue-100">إجمالي الرصيد</span>
-          <span className="font-medium">{formatPrice(String(balance))} ج.م</span>
+
+          {/* Linked bank cards */}
+          {cards.map((card: any, i: number) => {
+            const color = card.color || cardColors[i % cardColors.length];
+            return (
+              <div key={card.id} className={cn("snap-start flex-shrink-0 w-[300px] bg-gradient-to-br text-white rounded-2xl p-4 shadow-lg relative", color)}>
+                {card.is_primary && (
+                  <span className="absolute top-3 left-3 text-[10px] bg-white/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Star className="h-3 w-3 fill-yellow-300 text-yellow-300" /> رئيسية
+                  </span>
+                )}
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium">{card.card_name}</span>
+                  <span className="text-xs uppercase">{card.brand}</span>
+                </div>
+                <div className="mb-4 mt-6">
+                  <p className="text-xs opacity-80 mb-1">الرصيد</p>
+                  <p className="text-2xl font-bold">{formatPrice(String(card.balance))} <span className="text-sm">ج.م</span></p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="font-mono text-base tracking-widest">•••• {card.last4}</p>
+                  <div className="flex gap-1">
+                    <button onClick={() => setPrimaryMutation.mutate(card.id)} className="p-1 hover:bg-white/20 rounded" title="تعيين رئيسية">
+                      <Star className={cn("h-4 w-4", card.is_primary ? "fill-yellow-300 text-yellow-300" : "text-white/60")} />
+                    </button>
+                    <button onClick={() => deleteCardMutation.mutate(card.id)} className="p-1 hover:bg-white/20 rounded" title="حذف">
+                      <Trash2 className="h-4 w-4 text-white/60" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  <div className="w-8 h-5 bg-yellow-400/60 rounded-sm" />
+                  <div className="w-8 h-5 bg-red-500/60 rounded-sm" />
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Add card button */}
+          <button
+            onClick={() => setAddCardDialog(true)}
+            className="snap-start flex-shrink-0 w-[300px] border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors min-h-[160px]"
+          >
+            <Plus className="h-8 w-8 mb-2" />
+            <span className="text-sm">ربط بطاقة جديدة</span>
+          </button>
         </div>
       </div>
 
@@ -111,8 +221,6 @@ export default function UserWallet() {
       {/* Transactions */}
       <div className="px-4 mt-6">
         <h2 className="font-bold text-gray-900 mb-3">سجل العمليات</h2>
-
-        {/* Search box */}
         <div className="relative mb-3">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
@@ -122,7 +230,6 @@ export default function UserWallet() {
             className="h-10 pr-9"
           />
         </div>
-
         {isLoading ? (
           [1,2,3,4,5].map(i => <Skeleton key={i} className="h-14 w-full mb-1" />)
         ) : transactions.length > 0 ? (
@@ -179,6 +286,56 @@ export default function UserWallet() {
             <Button variant="outline" onClick={() => setWithdrawDialog(false)}>إلغاء</Button>
             <Button disabled={!amount || !providerId || withdrawMutation.isPending} onClick={() => withdrawMutation.mutate({ amount, providerId })}>
               {withdrawMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "سحب"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Card Dialog */}
+      <Dialog open={addCardDialog} onOpenChange={setAddCardDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>ربط بطاقة جديدة</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium mb-1 block">اسم البطاقة</label>
+              <Input
+                placeholder="مثال: فيزا الأهلي"
+                value={cardName}
+                onChange={(e) => setCardName(e.target.value)}
+                className="h-12"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">رقم البطاقة</label>
+              <Input
+                placeholder="0000 0000 0000 0000"
+                value={cardNumber}
+                onChange={(e) => setCardNumber(e.target.value)}
+                maxLength={19}
+                dir="ltr"
+                className="h-12 text-center font-mono"
+              />
+              <p className="text-xs text-gray-400 mt-1">سيتم تخزين آخر 4 أرقام فقط</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">نوع البطاقة</label>
+              <Select value={cardBrand} onValueChange={setCardBrand}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="visa">Visa</SelectItem>
+                  <SelectItem value="mastercard">Mastercard</SelectItem>
+                  <SelectItem value="meeza">Meeza</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddCardDialog(false)}>إلغاء</Button>
+            <Button
+              disabled={!cardName || cardNumber.replace(/\s/g, "").length < 4 || addCardMutation.isPending}
+              onClick={handleAddCard}
+            >
+              {addCardMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ربط"}
             </Button>
           </DialogFooter>
         </DialogContent>

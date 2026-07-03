@@ -3292,6 +3292,47 @@ export async function registerRoutes(server: Server, app: Express): Promise<void
   });
 
   // ================================================================
+  // USER: BANK CARDS (linked Visa/Mastercard)
+  // ================================================================
+
+  app.get("/api/user/cards", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const result = await db.execute(sql`SELECT * FROM bank_cards WHERE user_id = ${req.session.userId} ORDER BY is_primary DESC, created_at DESC`);
+    res.json({ cards: result.rows });
+  });
+
+  app.post("/api/user/cards", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    const { cardName, last4, brand, color } = req.body;
+    if (!cardName || !last4 || last4.length !== 4) {
+      return res.status(400).json({ message: "اسم البطاقة وآخر 4 أرقام مطلوبان" });
+    }
+    const result = await db.execute(sql`INSERT INTO bank_cards (user_id, card_name, last4, brand, is_primary, color) VALUES (${req.session.userId}, ${cardName}, ${last4}, ${brand || 'visa'}, false, ${color || 'from-blue-600 to-purple-700'}) RETURNING *`);
+    res.json({ success: true, card: result.rows[0] });
+  });
+
+  app.post("/api/user/cards/:id/primary", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    await db.execute(sql`UPDATE bank_cards SET is_primary = false WHERE user_id = ${req.session.userId}`);
+    await db.execute(sql`UPDATE bank_cards SET is_primary = true WHERE id = ${req.params.id} AND user_id = ${req.session.userId}`);
+    res.json({ success: true });
+  });
+
+  app.delete("/api/user/cards/:id", async (req: Request, res: Response) => {
+    if (!req.session?.userLoggedIn || !req.session?.userId) {
+      return res.status(401).json({ message: "غير مصرح" });
+    }
+    await db.execute(sql`DELETE FROM bank_cards WHERE id = ${req.params.id} AND user_id = ${req.session.userId}`);
+    res.json({ success: true });
+  });
+
+  // ================================================================
   // USER: REQUEST NEW CONTRACT TYPE
   // ================================================================
 
